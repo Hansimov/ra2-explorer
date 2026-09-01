@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "0.12.3",
+  "pagesUrl": "https://hansimov.github.io/ra2-explorer/",
+  "viewport": {
+    "width": 1920,
+    "height": 1080,
+    "deviceScaleFactor": 1.3333333333333333
+  },
+  "output": {
+    "width": 2560,
+    "height": 1440,
+    "frameRate": 30,
+    "playbackRate": 1.18,
+    "targetDurationSeconds": [
+      240,
+      340
+    ]
+  },
+  "audio": {
+    "outputDevice": "CABLE Input (VB-Audio Virtual Cable)",
+    "captureDevice": "CABLE Output (VB-Audio Virtual Cable)",
+    "presentationDelaySeconds": 0.55,
+    "narrationLufs": -18
+  },
+  "narration": {
+    "engine": "IndexTTS 2.5",
+    "precision": "BF16",
+    "promptFilename": "BV1Rw411a7AC.wav"
+  }
+}
