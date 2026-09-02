@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { SLOT_ORDER, chooseCueEvent, soundDescription } = require("./voice-event-semantics.cjs");
 
 const BASE_URL = (process.argv[2] || "http://127.0.0.1:46120/").replace(/\/+$/, "");
 const OUTPUT = path.resolve(process.argv[3] || path.join(__dirname, "soviet-voices-plan.json"));
@@ -9,23 +10,23 @@ const VOCAL_SLOTS = new Set([
   "select", "create", "move", "attack", "feedback", "special_attack",
   "enter", "capture", "deploy", "harvest", "die",
 ]);
-const SLOT_ORDER = new Map([
-  ["select", 0],
-  ["create", 1],
-  ["move", 2],
-  ["attack", 3],
-  ["feedback", 4],
-  ["special_attack", 5],
-  ["enter", 6],
-  ["capture", 7],
-  ["deploy", 8],
-  ["die", 9],
-]);
+const WEAPON_SOUND_SLOTS = /^(?:elite_)?(?:primary|secondary|weapon_\d+)$/i;
 const USAGE_ORDER = new Map([
   ["buildable", 0],
   ["hero", 1],
   ["scenario", 2],
   ["civilian", 3],
+]);
+const INFANTRY_PRESENTATION_ORDER = new Map([
+  ["e2", 0],
+  ["sengineer", 1],
+  ["terror", 2],
+  ["shk", 3],
+  ["ivan", 4],
+  ["deso", 5],
+  ["boris", 6],
+  ["lunr", 7],
+  ["dog", 8],
 ]);
 
 async function fetchJson(route) {
@@ -105,12 +106,25 @@ function visualInfo(entity) {
 function voiceCues(entity) {
   const cues = new Map();
   for (const association of entity.media || []) {
-    if (association.kind !== "voice" && !VOCAL_SLOTS.has(association.slot)) continue;
+    const weaponSound = association.kind === "sound" && WEAPON_SOUND_SLOTS.test(association.slot);
+    if (association.kind !== "voice" && !VOCAL_SLOTS.has(association.slot) && !weaponSound) continue;
     for (const sample of association.samples || []) {
       if (!sample.asset) continue;
-      const original = displayText(sample.original_text);
+      const semanticSlot = weaponSound ? "weapon" : compactText(association.slot);
+      const description = soundDescription(association.event, semanticSlot);
+      const sourceOriginal = displayText(sample.original_text);
+      const sourceTranslation = displayText(sample.translated_text) || description.translated;
+      const original = (
+        weaponSound ? description.original
+          : /^<[^<>]+>$/.test(sourceTranslation) && sourceOriginal && !/^<[^<>]+>$/.test(sourceOriginal)
+            ? `<${sourceOriginal}>`
+            : sourceOriginal || description.original
+      );
       const localized = preserveDescriptionMarkers(original, displayText(sample.localized_text));
-      const translated = preserveDescriptionMarkers(original, displayText(sample.translated_text));
+      const translated = preserveDescriptionMarkers(
+        original,
+        sourceTranslation,
+      );
       const current = cues.get(sample.asset.id) || {
         assetId: sample.asset.id,
         assetName: sample.asset.display_name,
@@ -121,9 +135,11 @@ function voiceCues(entity) {
         events: [],
       };
       const event = {
-        slot: compactText(association.slot),
+        slot: semanticSlot,
         event: compactText(association.event),
         source: compactText(association.source),
+        mediaKind: association.kind,
+        weaponSlot: weaponSound ? compactText(association.slot) : "",
       };
       if (!current.events.some((item) => item.slot === event.slot && item.event === event.event)) {
         current.events.push(event);
@@ -131,11 +147,14 @@ function voiceCues(entity) {
       cues.set(sample.asset.id, current);
     }
   }
-  return [...cues.values()].sort((left, right) => {
-    const leftEvent = left.events[0]?.slot || "";
-    const rightEvent = right.events[0]?.slot || "";
-    return (SLOT_ORDER.get(leftEvent) ?? 99) - (SLOT_ORDER.get(rightEvent) ?? 99)
-      || leftEvent.localeCompare(rightEvent)
+  return [...cues.values()].map((cue) => ({
+    ...cue,
+    primaryEvent: chooseCueEvent(cue, entity.id),
+  })).sort((left, right) => {
+    const leftSlot = left.primaryEvent?.slot || "";
+    const rightSlot = right.primaryEvent?.slot || "";
+    return (SLOT_ORDER.get(leftSlot) ?? 50) - (SLOT_ORDER.get(rightSlot) ?? 50)
+      || leftSlot.localeCompare(rightSlot)
       || left.assetName.localeCompare(right.assetName);
   });
 }
@@ -151,9 +170,13 @@ async function supplementalCosmonautDeathCues(sourceId) {
   return page.items
     .filter((item) => item.events.some((event) => event.toLowerCase() === "lasercosmodie"))
     .map((item) => {
-      const original = displayText(item.original_texts?.[0]);
+      const description = soundDescription("LaserCosmoDie", "die");
+      const original = displayText(item.original_texts?.[0]) || description.original;
       const localized = preserveDescriptionMarkers(original, displayText(item.localized_texts?.[0]));
-      const translated = preserveDescriptionMarkers(original, displayText(item.translated_texts?.[0]));
+      const translated = preserveDescriptionMarkers(
+        original,
+        displayText(item.translated_texts?.[0]) || description.translated,
+      );
       return {
         assetId: item.asset.id,
         assetName: item.asset.display_name,
@@ -162,6 +185,7 @@ async function supplementalCosmonautDeathCues(sourceId) {
         translated: translated && translated !== original ? translated : "",
         textLabel: translated ? "译文" : localized ? "中文" : "",
         events: [{ slot: "die", event: "LaserCosmoDie", source: "LaserCosmoDie" }],
+        primaryEvent: { slot: "die", event: "LaserCosmoDie", source: "LaserCosmoDie" },
         supplemental: true,
       };
     })
@@ -232,7 +256,11 @@ function groupSharedVoiceSets(units) {
       || left.name.localeCompare(right.name, "zh-CN")
     )),
     cues: group.cues,
-  }));
+  })).sort((left, right) => (
+    (INFANTRY_PRESENTATION_ORDER.get(left.representative.id.toLowerCase()) ?? 99)
+      - (INFANTRY_PRESENTATION_ORDER.get(right.representative.id.toLowerCase()) ?? 99)
+    || left.representative.name.localeCompare(right.representative.name, "zh-CN")
+  ));
 }
 
 async function main() {
