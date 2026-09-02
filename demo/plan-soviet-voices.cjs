@@ -56,10 +56,15 @@ function displayText(value) {
   const text = compactText(value);
   if (!text) return "";
   return text
-    .replace(/^\s*[<\[*（(]\s*/, "")
-    .replace(/\s*[>\]*）)]\s*$/, "")
     .replace(/^\*+|\*+$/g, "")
     .trim();
+}
+
+function preserveDescriptionMarkers(original, translation) {
+  if (!translation) return "";
+  return /^<.*>$/.test(original) && !/^<.*>$/.test(translation)
+    ? `<${translation}>`
+    : translation;
 }
 
 function isUnusedEntity(entity) {
@@ -105,8 +110,8 @@ function voiceCues(entity) {
     for (const sample of association.samples || []) {
       if (!sample.asset) continue;
       const original = displayText(sample.original_text);
-      const localized = displayText(sample.localized_text);
-      const translated = displayText(sample.translated_text);
+      const localized = preserveDescriptionMarkers(original, displayText(sample.localized_text));
+      const translated = preserveDescriptionMarkers(original, displayText(sample.translated_text));
       const current = cues.get(sample.asset.id) || {
         assetId: sample.asset.id,
         assetName: sample.asset.display_name,
@@ -148,8 +153,8 @@ async function supplementalCosmonautDeathCues(sourceId) {
     .filter((item) => item.events.some((event) => event.toLowerCase() === "lasercosmodie"))
     .map((item) => {
       const original = displayText(item.original_texts?.[0]);
-      const localized = displayText(item.localized_texts?.[0]);
-      const translated = displayText(item.translated_texts?.[0]);
+      const localized = preserveDescriptionMarkers(original, displayText(item.localized_texts?.[0]));
+      const translated = preserveDescriptionMarkers(original, displayText(item.translated_texts?.[0]));
       return {
         assetId: item.asset.id,
         assetName: item.asset.display_name,
