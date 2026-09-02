@@ -3,6 +3,7 @@ const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const { chromium } = require("playwright");
 const { animationMatchesSlot, chooseCueEvent, eventLabel } = require("./voice-event-semantics.cjs");
+const { planAnimationSections } = require("./voice-animation-planner.cjs");
 
 const ROOT = path.resolve(__dirname);
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "voice-video.config.json"), "utf8"));
@@ -10,6 +11,10 @@ const positional = process.argv.slice(2).filter((value) => !value.startsWith("--
 const BASE_URL = (positional[0] || "http://127.0.0.1:46120/").replace(/\/+$/, "");
 const KIND_FILTER = positional[1] || "infantry";
 const SMOKE = process.argv.includes("--smoke");
+const PLAN_ONLY = process.argv.includes("--plan-only");
+const unitFilterArgument = process.argv.find((value) => value.startsWith("--units="));
+const UNIT_FILTER = new Set((unitFilterArgument?.slice("--units=".length) || "")
+  .split(",").map((value) => value.trim().toUpperCase()).filter(Boolean));
 const PLAN_PATH = path.join(ROOT, "soviet-voices-plan.json");
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const RUN_DIR = path.join(ROOT, `soviet-voices-${SMOKE ? "smoke-" : ""}${RUN_ID}`);
@@ -23,7 +28,7 @@ const SOURCE_HEIGHT = CONFIG.output.height;
 const FPS = CONFIG.output.frameRate;
 const SECTION_LABELS = { infantry: "苏军步兵单位语音" };
 const SUBJECT_HEADER_OVERLAP = Number(CONFIG.visual.subjectHeaderOverlap) || 380;
-const SUBJECT_CANVAS_BASE_HEIGHT = 876;
+const SUBJECT_CANVAS_BASE_HEIGHT = Number(CONFIG.visual.subjectCanvasBaseHeight) || 1200;
 const SUBJECT_BASELINE_NORMAL = 765;
 const SUBJECT_BASELINE_LOW = 721;
 
@@ -105,41 +110,45 @@ function sequenceKey(sequence) {
   ].join(":");
 }
 
-function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
-  const sequences = (visual.sequences || []).filter((sequence) => validSequence(visual, sequence));
-  const flying = sequences.some((sequence) => sequenceNamed(sequence, ["fly"]));
-  const weaponPreferences = /deploy/i.test(String(eventName || ""))
-    ? [["deployedfire"], ["deploy"], ["fireup"]]
-    : unitId === "LUNR" ? [["firefly"], ["fireup"]]
-      : ["TERROR", "IVAN"].includes(unitId) ? [["deploy"], ["fireup"]]
-        : [["fireup"], ["deployedfire"], ["fireprone"]];
+function loopableSequence(sequence, slot) {
+  const event = String(sequence.event || "").toLowerCase();
+  if (["down", "up"].includes(event)) return false;
+  if (slot !== "die" && Number(sequence.frame_count || 0) < 3) return false;
+  return Number(sequence.frame_count || 0) >= 2;
+}
+
+function sequencePreferences(slot, unitId, eventName) {
+  if (slot === "move" && unitId === "LUNR") return [["fly"]];
+  if (["attack", "weapon", "special_attack"].includes(slot) && unitId === "LUNR") return [["firefly"]];
+  if (["attack", "weapon", "special_attack"].includes(slot) && ["TERROR", "IVAN"].includes(unitId)) {
+    return [["deploy"]];
+  }
+  if (slot === "weapon" && /deploy/i.test(String(eventName || ""))) {
+    return [["deployedfire"], ["deploy"], ["fireup"]];
+  }
   const preferences = {
-    select: [["idle1", "idle2"], ["ready", "guard"]],
-    create: [["cheer"], ["ready", "guard"], ["idle1", "idle2"]],
-    move: flying
-      ? [["fly"], ["walk", "swim"], ["crawl"], ["down"], ["up"]]
-      : [["walk", "swim"], ["crawl"], ["down"], ["up"]],
+    select: [["idle1"], ["idle2"], ["ready", "guard"]],
+    create: [["cheer"], ["idle1"], ["idle2"], ["ready", "guard"]],
+    move: [["walk", "swim"], ["crawl"]],
     enter: [["walk", "enter"]],
     capture: [["walk", "capture"], ["deploy"]],
-    deploy: [["deploy"], ["down"], ["deployedfire"], ["crawl"], ["up"]],
-    harvest: [["work", "harvest"], ["walk"], ["idle1", "idle2"]],
-    attack: (
-      unitId === "LUNR" ? [["firefly"], ["fireup"]]
-        : ["TERROR", "IVAN"].includes(unitId) ? [["deploy"], ["fireup"]]
-          : [["fireup"], ["deployedfire"], ["fireprone"]]
-    ),
-    weapon: weaponPreferences,
-    special_attack: [["deploy", "deployedfire"], ["firefly", "fireup"]],
-    feedback: (
-      unitId === "LUNR" ? [["down"], ["crawl"], ["up"], ["panic"]]
-        : unitId === "DOG" ? [["panic"]]
-          : [["down"], ["crawl"], ["panic"], ["up"]]
-    ),
-    die: unitId === "LUNR" ? [["airdeathstart"]] : [["die1", "die2"], ["death"]],
+    deploy: [["deploy"], ["deployedfire"], ["crawl"]],
+    harvest: [["work", "harvest"], ["walk"], ["idle1"], ["idle2"]],
+    attack: [["fireup"], ["fireprone"], ["deployedfire"]],
+    weapon: [["fireup"], ["fireprone"], ["deployedfire"]],
+    special_attack: [["deploy"], ["deployedfire"], ["fireup", "firefly"]],
+    feedback: unitId === "LUNR" ? [["panic"]] : [["panic"], ["crawl"]],
+    die: [["die1"], ["die2"], ["death"], ["tumble"]],
   };
+  return preferences[slot] || preferences.select;
+}
+
+function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
+  const sequences = (visual.sequences || [])
+    .filter((sequence) => validSequence(visual, sequence) && loopableSequence(sequence, slot));
   const matched = [];
   const seen = new Set();
-  for (const names of preferences[slot] || preferences.select) {
+  for (const names of sequencePreferences(slot, unitId, eventName)) {
     for (const sequence of sequences.filter((candidate) => sequenceNamed(candidate, names))) {
       const key = sequenceKey(sequence);
       if (seen.has(key)) continue;
@@ -147,7 +156,8 @@ function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
       matched.push(sequence);
     }
   }
-  return matched.length ? matched : sequences.slice(0, 1);
+  if (matched.length) return matched;
+  return sequences.filter((sequence) => animationMatchesSlot(slot, semanticAnimationEvent(sequence, slot))).slice(0, 1);
 }
 
 function sequenceFrames(visual, sequence) {
@@ -179,83 +189,88 @@ function stableSubjectReferenceFrames(group) {
 }
 
 function animationPosture(event) {
-  return /down|crawl|up|prone|die|death|tumble|deploy/i.test(String(event)) ? "low" : "normal";
-}
-
-function useSequence(sequenceUsage, sequenceId) {
-  const reuseCount = sequenceUsage.get(sequenceId) || 0;
-  sequenceUsage.set(sequenceId, reuseCount + 1);
-  return reuseCount;
+  return /crawl|prone|die|death|tumble|deployedfire/i.test(String(event)) ? "low" : "normal";
 }
 
 function semanticAnimationEvent(sequence, slot) {
+  if (slot === "feedback") {
+    const values = [sequence.event, ...(sequence.aliases || [])];
+    for (const preferred of ["panic", "crawl", "hit", "fear"]) {
+      const matched = values.find((value) => String(value).toLowerCase() === preferred);
+      if (matched) return matched;
+    }
+  }
   if (animationMatchesSlot(slot, sequence.event)) return sequence.event;
   return (sequence.aliases || []).find((alias) => animationMatchesSlot(slot, alias))
     || sequence.event;
 }
 
-function sequenceAnimation(group, slot, sourceId, eventName, sequenceUsage) {
+function sequenceDescriptor(visual, sequence, slot) {
+  const event = semanticAnimationEvent(sequence, slot);
+  return {
+    event,
+    frames: sequenceFrames(visual, sequence),
+    intervalMs: Number(sequence.rate_ms) > 0 ? Number(sequence.rate_ms) : CONFIG.visual.frameIntervalMs,
+    posture: animationPosture(event),
+    sequenceId: sequenceKey(sequence),
+    playbackMode: slot === "die" ? "once-hold" : "loop",
+  };
+}
+
+function animationCandidates(group, section, sourceId) {
   const visual = group.representative.visual;
   if (visual.bodyFormat === "vxl") {
     const facingOrder = [0, 7, 6, 5, 4, 3, 2, 1];
-    const sequenceId = "vxl:facing";
-    return {
+    return [{
       event: "facing",
       frames: facingOrder.map((facing) => entityPreviewUrl(sourceId, group.representative.id, facing)),
       intervalMs: CONFIG.visual.voxelFacingIntervalMs,
       posture: "normal",
-      sequenceId,
-      reuseCount: useSequence(sequenceUsage, sequenceId),
-      candidateCount: 1,
-    };
+      sequenceId: "vxl:facing",
+      playbackMode: "loop",
+    }];
   }
+  const cue = section.cues[0];
+  const slot = section.slot;
+  const candidates = sequenceCandidatesForSlot(
+    visual,
+    slot,
+    group.representative.id,
+    cue.eventName,
+  ).map((sequence) => sequenceDescriptor(visual, sequence, slot));
   if (slot === "die" && group.representative.id === "LUNR") {
     const airDeath = ["airdeathstart", "airdeathfinish"]
       .map((name) => (visual.sequences || []).find((sequence) => (
-        validSequence(visual, sequence) && sequenceNamed(sequence, [name])
+        validSequence(visual, sequence) && String(sequence.event || "").toLowerCase() === name
       )))
       .filter(Boolean);
     if (airDeath.length === 2) {
-      const sequenceId = airDeath.map(sequenceKey).join("+");
-      return {
+      candidates.push({
         event: "airdeathstart+airdeathfinish",
         frames: airDeath.flatMap((sequence) => sequenceFrames(visual, sequence)),
         intervalMs: CONFIG.visual.frameIntervalMs,
         posture: "low",
-        sequenceId,
-        reuseCount: useSequence(sequenceUsage, sequenceId),
-        candidateCount: 1,
-      };
+        sequenceId: airDeath.map(sequenceKey).join("+"),
+        playbackMode: "once-hold",
+      });
     }
   }
-  const candidates = sequenceCandidatesForSlot(visual, slot, group.representative.id, eventName);
-  const sequence = candidates.reduce((selected, candidate) => {
-    if (!selected) return candidate;
-    return (sequenceUsage.get(sequenceKey(candidate)) || 0) < (sequenceUsage.get(sequenceKey(selected)) || 0)
-      ? candidate
-      : selected;
-  }, null);
-  if (!sequence) {
-    const sequenceId = `preview:${group.representative.id}`;
-    return {
-      event: "preview",
-      frames: [entityPreviewUrl(sourceId, group.representative.id, 5)],
-      intervalMs: CONFIG.visual.frameIntervalMs,
-      posture: "normal",
-      sequenceId,
-      reuseCount: useSequence(sequenceUsage, sequenceId),
-      candidateCount: 1,
-    };
-  }
-  const sequenceId = sequenceKey(sequence);
+  return candidates;
+}
+
+function postureTransition(visual, from, to) {
+  if (from === to || !["normal", "low"].includes(from) || !["normal", "low"].includes(to)) return null;
+  const event = from === "normal" && to === "low" ? "down" : "up";
+  const sequence = (visual.sequences || []).find((candidate) => (
+    validSequence(visual, candidate)
+    && String(candidate.event || "").toLowerCase() === event
+    && Number(candidate.frame_count || 0) >= 2
+  ));
+  if (!sequence) return null;
   return {
-    event: semanticAnimationEvent(sequence, slot),
+    event,
     frames: sequenceFrames(visual, sequence),
     intervalMs: Number(sequence.rate_ms) > 0 ? Number(sequence.rate_ms) : CONFIG.visual.frameIntervalMs,
-    posture: animationPosture(sequence.event),
-    sequenceId,
-    reuseCount: useSequence(sequenceUsage, sequenceId),
-    candidateCount: candidates.length,
   };
 }
 
@@ -267,23 +282,44 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
     if (invalidSequenceEvents.length) {
       console.warn(`[visual] ${group.representative.name} 跳过越界动作：${invalidSequenceEvents.join("、")}`);
     }
-    const sequenceUsage = new Map();
-    const cues = group.cues.map((cue) => {
+    const semanticCues = group.cues.map((cue) => {
       const event = cue.primaryEvent || chooseCueEvent(cue, group.representative.id);
       const slot = event.slot || "select";
-      const animation = sequenceAnimation(group, slot, sourceId, event.event, sequenceUsage);
-      if (!animationMatchesSlot(slot, animation.event)) {
-        throw new Error(`${group.representative.name}/${cue.assetName} 的 ${slot} 事件错误匹配到 ${animation.event}`);
-      }
       return {
         ...cue,
         slot,
         eventLabel: eventLabel(event),
         eventName: event.event || "",
+      };
+    });
+    const cues = planAnimationSections(semanticCues, {
+      unitId: group.representative.id,
+      minimumRunLength: Number(CONFIG.visual.animationMinimumRunLength) || 2,
+      getCandidates: (section) => animationCandidates(group, section, sourceId),
+      getTransition: (from, to) => postureTransition(group.representative.visual, from, to),
+    }).map((cue) => {
+      const animation = { ...cue.animation };
+      if (animation.playbackMode === "once-hold" && animation.loopFrames.length > 1) {
+        const availableMs = (
+          Number(cue.durationSeconds || 0)
+          + Number(CONFIG.audio.cueLeadSeconds || 0)
+          + Number(CONFIG.audio.cueGapSeconds || 0)
+        ) * 1000;
+        animation.intervalMs = Math.max(70, Math.min(
+          animation.intervalMs,
+          availableMs / Math.max(1, animation.loopFrames.length - 1),
+        ));
+      }
+      if (!animationMatchesSlot(cue.slot, animation.event)) {
+        throw new Error(`${group.representative.name}/${cue.assetName} 的 ${cue.slot} 事件错误匹配到 ${animation.event}`);
+      }
+      return {
+        ...cue,
         animation,
       };
     });
     const uniqueAnimationCount = new Set(cues.map((cue) => cue.animation.sequenceId)).size;
+    const animationRunCount = new Set(cues.map((cue) => cue.animation.runId)).size;
     return {
       ...group,
       cameoUrl: group.representative.visual.cameoAssetId
@@ -294,7 +330,12 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
         })
         : entityPreviewUrl(sourceId, group.representative.id, 5, 5),
       invalidSequenceEvents,
-      animationCoverage: { assigned: cues.length, unique: uniqueAnimationCount },
+      animationCoverage: {
+        assigned: cues.length,
+        unique: uniqueAnimationCount,
+        runs: animationRunCount,
+        sections: new Set(cues.map((cue) => cue.animation.sectionKey)).size,
+      },
       cues,
     };
   });
@@ -318,23 +359,27 @@ function validateDescriptionMarkers(groups) {
 function smokeSelection(groups) {
   const extraSlots = {
     E2: ["weapon", "feedback", "die"],
-    SHK: ["weapon"],
-    LUNR: ["move", "weapon", "feedback", "die"],
+    SENGINEER: ["move", "capture", "weapon", "feedback", "die"],
+    TERROR: ["move", "attack", "feedback", "die"],
+    SHK: ["move", "weapon", "feedback", "die"],
+    IVAN: ["move", "attack", "die"],
+    DESO: ["move", "attack", "weapon", "die"],
+    BORIS: ["create", "move", "attack", "weapon", "feedback", "die"],
+    LUNR: ["move", "attack", "weapon", "feedback", "die"],
     DOG: ["weapon", "feedback", "die"],
-    DESO: ["weapon", "die"],
   };
   return groups.map((group) => {
-    const slots = [group.cues[0]?.slot, ...(extraSlots[group.representative.id] || [])].filter(Boolean);
-    const cues = slots.map((slot) => group.cues.find((cue) => cue.slot === slot)).filter(Boolean);
-    if (group.representative.id === "SHK") {
-      cues.push(group.cues.find((cue) => cue.slot === "weapon" && cue.weaponTier === "elite"));
-    }
-    const selected = [...new Map(cues.filter(Boolean).map((cue) => [cue.assetId, cue])).values()];
+    const slots = new Set([group.cues[0]?.slot, ...(extraSlots[group.representative.id] || [])].filter(Boolean));
+    const selected = [...new Map(group.cues
+      .filter((cue) => slots.has(cue.slot))
+      .map((cue) => [`${cue.slot}:${cue.animation.runId}`, cue])).values()];
     return {
       ...group,
       animationCoverage: {
         assigned: selected.length,
         unique: new Set(selected.map((cue) => cue.animation.sequenceId)).size,
+        runs: new Set(selected.map((cue) => cue.animation.runId)).size,
+        sections: new Set(selected.map((cue) => cue.animation.sectionKey)).size,
       },
       cues: selected,
     };
@@ -384,171 +429,102 @@ async function prewarmBackend(groups) {
 
 function presentationHtml() {
   const subjectCanvasHeight = SUBJECT_CANVAS_BASE_HEIGHT + SUBJECT_HEADER_OVERLAP;
-  const subjectStageTop = 8 - SUBJECT_HEADER_OVERLAP;
+  const subjectStageTop = 500 + 8 - SUBJECT_HEADER_OVERLAP;
   const normalBaseline = SUBJECT_BASELINE_NORMAL + SUBJECT_HEADER_OVERLAP;
   const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
+  const eventGapBelowName = Number(CONFIG.visual.eventGapBelowName) || 45;
   const unitFadeSeconds = Number(CONFIG.visual.unitFadeSeconds) || 0.38;
   const unitSlideSeconds = Number(CONFIG.visual.unitSlideSeconds) || 0.56;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
-    .shell{display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:16px 24px 8px;overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current strong{max-width:100%;overflow:hidden;color:#ef625c;font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
-    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:0;left:0;z-index:3;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;left:calc(50% + 160px);top:220px;z-index:4;display:flex;align-items:center;justify-content:flex-start;transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
-    .voice{display:grid;overflow:hidden;padding:0 42px 18px;transition:opacity ${unitFadeSeconds}s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
+    .shell{position:relative;display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{position:relative;z-index:2;display:grid;place-items:center;padding:16px 24px 8px;overflow:visible}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current-label{position:relative;max-width:100%}.unit-current strong{display:block;max-width:100%;overflow:hidden;color:#ef625c;font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
+    .content{position:relative;z-index:1;display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:40px;left:40px;z-index:6;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;top:calc(100% + ${eventGapBelowName}px);left:50%;z-index:4;display:flex;align-items:center;justify-content:center;transform:translateX(-50%);transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52);white-space:nowrap}.event i{display:none}
+    .voice{position:relative;z-index:2;display:grid;overflow:visible;padding:0 42px 18px;transition:opacity ${unitFadeSeconds}s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
-    .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:38px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:88px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:32px;font-weight:600}
+    .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.instant{transition:none}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:42px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:98px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:34px;font-weight:600}
     .unit-track{transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1),filter ${unitFadeSeconds}s ease;will-change:opacity,transform,filter}.unit-leaving .unit-track{opacity:0;transform:translateX(-110px) scale(.965);filter:blur(3px)}.unit-entering .unit-track{opacity:0;transform:translateX(110px) scale(.965);filter:blur(3px)}.unit-leaving .subject{opacity:0;transform:translateX(-54px) scale(.985)}.unit-entering .subject{opacity:0;transform:translateX(54px) scale(.985)}.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
-  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
+  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><div class="unit-current-label"><strong></strong><div class="voice-head"><span class="event"><i></i><b></b></span></div></div></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
     window.__voiceTimer = 0;
+    window.__voiceRunId = '';
     window.__voiceFrames = {};
     window.__voiceLayouts = {};
-    window.__setFrames = (frames, interval, posture, unitId) => {
-      clearInterval(window.__voiceTimer);
+    window.__animationPlacement = (animationChanged) => {
+      const unitName = document.querySelector('.unit-current strong');
+      const voiceHead = document.querySelector('.voice-head');
+      const stage = document.querySelector('.stage-frame');
+      const voice = document.querySelector('.voice');
+      const nameRect = unitName.getBoundingClientRect();
+      const headRect = voiceHead.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      const voiceRect = voice.getBoundingClientRect();
+      const stageZ = Number(getComputedStyle(stage).zIndex);
+      const voiceZ = Number(getComputedStyle(voice).zIndex);
+      return {
+        strategy: 'fixed-under-unit-name',
+        gapFromUnitName: headRect.top - nameRect.bottom,
+        centerX: headRect.left + headRect.width / 2,
+        top: headRect.top,
+        insideViewport: headRect.left >= 0 && headRect.top >= 0
+          && headRect.right <= window.innerWidth && headRect.bottom <= window.innerHeight,
+        subjectLayerAboveTranscript: stageZ > voiceZ,
+        subjectCanvasCrossesTranscript: stageRect.bottom > voiceRect.top,
+        animationChanged,
+      };
+    };
+    window.__setAnimation = (animation, unitId, forceRestart = false) => {
+      const sameRun = !forceRestart && animation.runId && window.__voiceRunId === animation.runId;
+      if (sameRun) return window.__animationPlacement(false);
+      clearTimeout(window.__voiceTimer);
+      window.__voiceRunId = animation.runId || '';
       const canvas = document.querySelector('.subject');
       const context = canvas.getContext('2d');
       context.imageSmoothingEnabled = false;
       const layout = window.__voiceLayouts[unitId] || {
         scale: 1, anchorX: 0, anchorY: 0, referenceWidth: 1, referenceHeight: 1,
       };
-      const sequence = frames.map((src) => window.__voiceFrames[src]).filter(Boolean);
+      const intro = (animation.introFrames || []).map((src) => window.__voiceFrames[src]).filter(Boolean);
+      const loop = (animation.loopFrames || animation.frames || []).map((src) => window.__voiceFrames[src]).filter(Boolean);
       const scale = layout.scale;
-      const baseline = posture === 'low' ? ${lowBaseline} : ${normalBaseline};
+      const baseline = animation.posture === 'low' ? ${lowBaseline} : ${normalBaseline};
       const drawLeft = canvas.width / 2 - layout.anchorX * scale;
       const drawTop = baseline - layout.anchorY * scale;
-      const frameRect = canvas.getBoundingClientRect();
-      const visual = document.querySelector('.visual');
-      const visualRect = visual.getBoundingClientRect();
-      const voiceHead = document.querySelector('.voice-head');
-      const cssScaleX = frameRect.width / canvas.width;
-      const cssScaleY = frameRect.height / canvas.height;
-      const canvasOffsetX = frameRect.left - visualRect.left;
-      const canvasOffsetY = frameRect.top - visualRect.top;
-      const margin = ${Number(CONFIG.visual.eventCollisionMargin) || 14};
-
-      const union = sequence.reduce((bounds, frame) => {
-        const opaque = frame.bounds || {
-          left: 0, top: 0, right: frame.image.naturalWidth, bottom: frame.image.naturalHeight,
-        };
-        const left = canvasOffsetX + (drawLeft + opaque.left * scale) * cssScaleX;
-        const top = canvasOffsetY + (drawTop + opaque.top * scale) * cssScaleY;
-        const right = canvasOffsetX + (drawLeft + opaque.right * scale) * cssScaleX;
-        const bottom = canvasOffsetY + (drawTop + opaque.bottom * scale) * cssScaleY;
-        return {
-          left: Math.min(bounds.left, left),
-          top: Math.min(bounds.top, top),
-          right: Math.max(bounds.right, right),
-          bottom: Math.max(bounds.bottom, bottom),
-        };
-      }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
-      if (!Number.isFinite(union.left)) {
-        union.left = visualRect.width / 2 - layout.referenceWidth * scale * cssScaleX / 2;
-        union.right = visualRect.width / 2 + layout.referenceWidth * scale * cssScaleX / 2;
-        union.bottom = canvasOffsetY + baseline * cssScaleY;
-        union.top = union.bottom - layout.referenceHeight * scale * cssScaleY;
-      }
-
-      const labelRect = voiceHead.getBoundingClientRect();
-      const labelWidth = Math.max(1, labelRect.width);
-      const labelHeight = Math.max(1, labelRect.height);
-      const bodyHeight = Math.max(1, union.bottom - union.top);
-      const preferredTop = union.top + bodyHeight * (posture === 'low' ? 0.12 : 0.2);
-      const gap = 22;
-      const rawCandidates = [
-        { strategy: 'right-upper', left: union.right + gap, top: preferredTop },
-        { strategy: 'right-center', left: union.right + gap, top: union.top + bodyHeight * 0.44 },
-        { strategy: 'above-right', left: union.right - labelWidth, top: union.top - labelHeight - gap },
-        { strategy: 'left-upper', left: union.left - labelWidth - gap, top: preferredTop },
-        { strategy: 'left-center', left: union.left - labelWidth - gap, top: union.top + bodyHeight * 0.44 },
-        { strategy: 'above-left', left: union.left, top: union.top - labelHeight - gap },
-        { strategy: 'visual-right', left: visualRect.width - labelWidth - 24, top: preferredTop },
-        { strategy: 'visual-left', left: 24, top: preferredTop },
-      ];
-
-      const collisionTiles = (frame, rect) => {
-        const collision = frame.collision;
-        if (!collision) return 0;
-        const canvasLeft = (rect.left - canvasOffsetX) / cssScaleX;
-        const canvasTop = (rect.top - canvasOffsetY) / cssScaleY;
-        const canvasRight = (rect.right - canvasOffsetX) / cssScaleX;
-        const canvasBottom = (rect.bottom - canvasOffsetY) / cssScaleY;
-        const sourceLeft = (canvasLeft - drawLeft) / scale;
-        const sourceTop = (canvasTop - drawTop) / scale;
-        const sourceRight = (canvasRight - drawLeft) / scale;
-        const sourceBottom = (canvasBottom - drawTop) / scale;
-        if (
-          sourceRight <= 0 || sourceBottom <= 0
-          || sourceLeft >= frame.image.naturalWidth || sourceTop >= frame.image.naturalHeight
-        ) return 0;
-        const startColumn = Math.max(0, Math.floor(sourceLeft / collision.tileSize));
-        const endColumn = Math.min(collision.columns - 1, Math.floor((sourceRight - 0.01) / collision.tileSize));
-        const startRow = Math.max(0, Math.floor(sourceTop / collision.tileSize));
-        const endRow = Math.min(collision.rows - 1, Math.floor((sourceBottom - 0.01) / collision.tileSize));
-        let hits = 0;
-        for (let row = startRow; row <= endRow; row += 1) {
-          for (let column = startColumn; column <= endColumn; column += 1) {
-            hits += collision.occupied[row * collision.columns + column] ? 1 : 0;
-          }
-        }
-        return hits;
-      };
-
-      const candidates = rawCandidates.map((candidate, index) => {
-        const left = Math.max(24, Math.min(visualRect.width - labelWidth - 24, candidate.left));
-        const top = Math.max(64, Math.min(visualRect.height - labelHeight - 24, candidate.top));
-        const collisionRect = {
-          left: left - margin,
-          top: top - margin,
-          right: left + labelWidth + margin,
-          bottom: top + labelHeight + margin,
-        };
-        const frameHits = sequence.map((frame) => collisionTiles(frame, collisionRect));
-        const collisionFrames = frameHits.filter((hits) => hits > 0).length;
-        const occupiedTiles = frameHits.reduce((total, hits) => total + hits, 0);
-        const distance = Math.hypot(left - (union.right + gap), top - preferredTop);
-        return {
-          ...candidate,
-          left,
-          top,
-          collisionFrames,
-          occupiedTiles,
-          score: collisionFrames * 100000000 + occupiedTiles * 10000 + distance + index,
-        };
-      }).sort((left, right) => left.score - right.score);
-      const placement = candidates[0];
-      voiceHead.style.left = placement.left + 'px';
-      voiceHead.style.top = placement.top + 'px';
-
+      let phase = intro.length ? 'intro' : 'loop';
       let index = 0;
-      const apply = () => {
+      const draw = (frame) => {
         context.clearRect(0, 0, canvas.width, canvas.height);
-        const frame = sequence[index];
-        if (frame) {
-          context.drawImage(
-            frame.image,
-            drawLeft,
-            drawTop,
-            frame.image.naturalWidth * scale,
-            frame.image.naturalHeight * scale,
-          );
+        if (!frame) return;
+        context.drawImage(
+          frame.image,
+          drawLeft,
+          drawTop,
+          frame.image.naturalWidth * scale,
+          frame.image.naturalHeight * scale,
+        );
+      };
+      const schedule = () => {
+        const interval = phase === 'intro' ? animation.introIntervalMs : animation.intervalMs;
+        window.__voiceTimer = setTimeout(advance, Math.max(70, interval || 110));
+      };
+      const advance = () => {
+        if (phase === 'intro') {
+          if (index + 1 < intro.length) index += 1;
+          else {
+            phase = 'loop';
+            index = 0;
+          }
+        } else if (animation.playbackMode === 'once-hold') {
+          if (index + 1 >= loop.length) return;
+          index += 1;
+        } else {
+          index = loop.length ? (index + 1) % loop.length : 0;
         }
+        draw(phase === 'intro' ? intro[index] : loop[index]);
+        if (phase === 'intro' || animation.playbackMode !== 'once-hold' || index + 1 < loop.length) schedule();
       };
-      apply();
-      if (sequence.length > 1) {
-        window.__voiceTimer = setInterval(() => {
-          index = (index + 1) % sequence.length;
-          apply();
-        }, Math.max(70, interval || 110));
-      }
-      return {
-        strategy: placement.strategy,
-        left: placement.left,
-        top: placement.top,
-        collisionFrames: placement.collisionFrames,
-        occupiedTiles: placement.occupiedTiles,
-        insideViewport: placement.left >= 0 && placement.top >= 0
-          && placement.left + labelWidth <= visualRect.width
-          && placement.top + labelHeight <= visualRect.height,
-      };
+      draw(phase === 'intro' ? intro[0] : loop[0]);
+      if ((phase === 'intro' && intro.length) || loop.length > 1) schedule();
+      return window.__animationPlacement(true);
     };
     window.__fitOriginal = () => {
       const text = document.querySelector('.original');
@@ -580,11 +556,18 @@ async function installPresentation(page, kind, groups) {
     group.cameoUrl,
     ...group.cues.flatMap((cue) => cue.animation.frames),
   ]).concat(frameGroups.flatMap((group) => group.referenceFrames)).filter(Boolean))];
+  const animations = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
+    cue.animation.sequenceId,
+    {
+      sequenceId: cue.animation.sequenceId,
+      playbackMode: cue.animation.playbackMode,
+      loopFrames: cue.animation.loopFrames,
+    },
+  ])).values()];
   const targetSpan = Number(CONFIG.visual.subjectSpan) || 576;
   const headerOverlap = SUBJECT_HEADER_OVERLAP;
   const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
-  const collisionTileSize = Number(CONFIG.visual.eventCollisionTileSize) || 8;
-  const visualLayouts = await page.evaluate(async ({ values, frameGroups, targetSpan, headerOverlap, lowBaseline, collisionTileSize }) => {
+  const visualAudit = await page.evaluate(async ({ values, frameGroups, animations, targetSpan, headerOverlap, lowBaseline }) => {
     const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
       const image = new Image();
@@ -611,16 +594,25 @@ async function installPresentation(page, kind, groups) {
       let top = scratch.height;
       let right = -1;
       let bottom = -1;
-      const columns = Math.ceil(scratch.width / collisionTileSize);
-      const rows = Math.ceil(scratch.height / collisionTileSize);
-      const occupied = new Uint8Array(columns * rows);
+      let visibleSamples = 0;
+      let positionMoment = 0;
+      let colorMoment = 0;
       for (let y = 0; y < scratch.height; y += 2) {
         for (let x = 0; x < scratch.width; x += 2) {
           const offset = (y * scratch.width + x) * 4;
           const alpha = pixels[offset + 3];
           const brightness = pixels[offset] + pixels[offset + 1] + pixels[offset + 2];
           if (alpha >= 40 && brightness >= 18) {
-            occupied[Math.floor(y / collisionTileSize) * columns + Math.floor(x / collisionTileSize)] = 1;
+            visibleSamples += 1;
+            positionMoment = (positionMoment + (x + 3) * 17 + (y + 5) * 31) % 2147483647;
+            colorMoment = (
+              colorMoment
+              + pixels[offset] * 3
+              + pixels[offset + 1] * 5
+              + pixels[offset + 2] * 7
+              + alpha * 11
+              + (x + 1) * (y + 1)
+            ) % 2147483647;
           }
           if (alpha < 40 || brightness < 36) continue;
           left = Math.min(left, x);
@@ -633,7 +625,13 @@ async function installPresentation(page, kind, groups) {
         ? { left, top, right: right + 1, bottom: bottom + 1, width: right - left + 1, height: bottom - top + 1 }
         : { left: 0, top: 0, right: image.naturalWidth, bottom: image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
       records[src].bounds = bounds;
-      records[src].collision = { tileSize: collisionTileSize, columns, rows, occupied };
+      records[src].motionSignature = [
+        scratch.width,
+        scratch.height,
+        visibleSamples,
+        positionMoment,
+        colorMoment,
+      ].join(":");
       measured.set(src, bounds);
       return bounds;
     };
@@ -677,10 +675,35 @@ async function installPresentation(page, kind, groups) {
         sourceTopAtLowPosture: lowBaseline - sample.anchorY * scale,
       };
     }
+    const animationMotion = Object.fromEntries(animations.map((animation) => {
+      const signatures = animation.loopFrames
+        .map((src) => records[src]?.motionSignature)
+        .filter(Boolean);
+      return [animation.sequenceId, {
+        playbackMode: animation.playbackMode,
+        loopFrameCount: signatures.length,
+        distinctLoopFrames: new Set(signatures).size,
+      }];
+    }));
     window.__voiceFrames = records;
     window.__voiceLayouts = layouts;
-    return layouts;
-  }, { values: urls, frameGroups, targetSpan, headerOverlap, lowBaseline, collisionTileSize });
+    const stage = document.querySelector(".stage-frame");
+    const voice = document.querySelector(".voice");
+    const stageRect = stage.getBoundingClientRect();
+    const voiceRect = voice.getBoundingClientRect();
+    return {
+      visualLayouts: layouts,
+      animationMotion,
+      presentationLayout: {
+        subjectLayerZ: Number(getComputedStyle(stage).zIndex),
+        transcriptLayerZ: Number(getComputedStyle(voice).zIndex),
+        subjectCanvasBottom: stageRect.bottom,
+        transcriptTop: voiceRect.top,
+        subjectCanvasCrossesTranscript: stageRect.bottom > voiceRect.top,
+      },
+    };
+  }, { values: urls, frameGroups, animations, targetSpan, headerOverlap, lowBaseline });
+  const { visualLayouts } = visualAudit;
   console.log(`[visual] 以疯狂伊文为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
   const audioAssets = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
     cue.assetId,
@@ -702,21 +725,34 @@ async function installPresentation(page, kind, groups) {
     await Promise.all(Array.from({ length: Math.min(8, assets.length) }, worker));
     window.__voiceMediaUrls = objectUrls;
   }, audioAssets);
-  return visualLayouts;
+  return visualAudit;
 }
 
-async function showTransition(page, eyebrow, title, detail, durationSeconds) {
-  await page.evaluate(({ eyebrow, title, detail }) => {
+async function prepareInitialTransition(page, eyebrow, title, detail) {
+  return page.evaluate(async ({ eyebrow, title, detail }) => {
     const overlay = document.querySelector(".transition");
     overlay.querySelector("small").textContent = eyebrow;
     overlay.querySelector("h2").textContent = title;
     overlay.querySelector("p").textContent = detail;
-    overlay.classList.add("visible");
+    overlay.classList.add("instant", "visible");
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const titleRect = overlay.querySelector("h2").getBoundingClientRect();
+    return {
+      preparedBeforeCapture: true,
+      title,
+      opacity: Number(getComputedStyle(overlay).opacity),
+      titleVisible: titleRect.width > 0 && titleRect.height > 0,
+    };
   }, { eyebrow, title, detail });
-  await page.waitForTimeout(420);
-  await page.waitForTimeout(Math.max(0, durationSeconds * 1000 - 840));
+}
+
+async function finishInitialTransition(page, captureStartedAt, durationSeconds) {
+  const fadeMs = 420;
+  await page.evaluate(() => document.querySelector(".transition").classList.remove("instant"));
+  const elapsedMs = Date.now() - captureStartedAt;
+  await page.waitForTimeout(Math.max(0, durationSeconds * 1000 - elapsedMs - fadeMs));
   await page.evaluate(() => document.querySelector(".transition").classList.remove("visible"));
-  await page.waitForTimeout(420);
+  await page.waitForTimeout(fadeMs);
 }
 
 async function showUnit(page, groups, groupIndex) {
@@ -745,8 +781,15 @@ async function showUnit(page, groups, groupIndex) {
     document.querySelector(".unit-current strong").textContent = group.representative.name;
     document.querySelector(".unit-current img").src = group.cameoUrl || "";
     document.querySelector(".unit-current img").style.visibility = group.cameoUrl ? "visible" : "hidden";
-    const animation = group.cues[0]?.animation || { frames: [], intervalMs: 110 };
-    window.__setFrames(animation.frames, animation.intervalMs, animation.posture, group.representative.id);
+    const first = group.cues[0]?.animation || { frames: [], loopFrames: [], intervalMs: 110 };
+    const animation = {
+      ...first,
+      introFrames: [],
+      loopFrames: first.loopFrames || first.frames || [],
+      runId: 'unit-intro:' + group.representative.id,
+      playbackMode: "loop",
+    };
+    window.__setAnimation(animation, group.representative.id, true);
     document.querySelector(".event b").textContent = "";
     document.querySelector(".original").textContent = "";
     window.__fitOriginal();
@@ -775,7 +818,7 @@ async function showCue(page, group, cue, cueIndex, segmentCueIndex, totalCues) {
     document.querySelector(".original-block").classList.toggle("hidden", !original);
     document.querySelector(".localized-block").classList.toggle("hidden", !chinese || chinese === original);
     document.querySelector(".progress b").style.width = `${((segmentCueIndex + 1) / totalCues) * 100}%`;
-    return window.__setFrames(cue.animation.frames, cue.animation.intervalMs, cue.animation.posture, unitId);
+    return window.__setAnimation(cue.animation, unitId);
   }, {
     cue,
     unitId: group.representative.id,
@@ -981,8 +1024,14 @@ async function recordSection(browser, kind, groups) {
     if (failure?.errorText !== "net::ERR_ABORTED") failedRequests.push({ url: request.url(), error: failure?.errorText || "failed" });
   });
   await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
-  const visualLayouts = await installPresentation(page, kind, groups);
+  const visualAudit = await installPresentation(page, kind, groups);
   const routing = await prepareCableAudio(page);
+  const initialTransition = await prepareInitialTransition(
+    page,
+    "资源支持 · ra2-explorer",
+    SECTION_LABELS[kind],
+    "",
+  );
   const rawTarget = path.join(RAW_DIR, `${kind}.mkv`);
   const audioTarget = path.join(AUDIO_DIR, `${kind}-cable.wav`);
   const segment = {
@@ -998,7 +1047,10 @@ async function recordSection(browser, kind, groups) {
       animationCoverage: group.animationCoverage,
     })),
     expectedCueCount: groups.reduce((total, group) => total + group.cues.length, 0),
-    visualLayouts,
+    visualLayouts: visualAudit.visualLayouts,
+    animationMotion: visualAudit.animationMotion,
+    presentationLayout: visualAudit.presentationLayout,
+    initialTransition,
     groupChapters: [],
     audioCues: [],
     errors,
@@ -1014,13 +1066,7 @@ async function recordSection(browser, kind, groups) {
     segment.cableCaptureStart = (cableCapture.readyAt - segment.startedAt) / 1000;
     segment.cableCapture = path.relative(RUN_DIR, audioTarget).replaceAll("\\", "/");
     segment.cablePresentationDelay = CONFIG.audio.presentationDelaySeconds;
-    await showTransition(
-      page,
-      "资源支持 · ra2-explorer",
-      SECTION_LABELS[kind],
-      "",
-      CONFIG.visual.sectionIntroSeconds,
-    );
+    await finishInitialTransition(page, segment.startedAt, CONFIG.visual.sectionIntroSeconds);
     let segmentCueIndex = 0;
     for (const [groupIndex, group] of groups.entries()) {
       console.log(`[record] ${SECTION_LABELS[kind]} ${groupIndex + 1}/${groups.length} ${group.representative.name} (${group.cues.length})`);
@@ -1044,6 +1090,16 @@ async function recordSection(browser, kind, groups) {
           textLabel: cue.textLabel,
           animationEvent: cue.animation.event,
           animationSequence: cue.animation.sequenceId,
+          animationRunId: cue.animation.runId,
+          animationPlaybackMode: cue.animation.playbackMode,
+          animationTransitionEvents: cue.animation.transitionEvents,
+          animationIntroFrameCount: cue.animation.introFrames.length,
+          animationLoopFrameCount: cue.animation.loopFrames.length,
+          animationDistinctLoopFrames: visualAudit.animationMotion[cue.animation.sequenceId]?.distinctLoopFrames,
+          animationSectionKey: cue.animation.sectionKey,
+          animationSectionCueIndex: cue.animation.sectionCueIndex,
+          animationSectionCueCount: cue.animation.sectionCueCount,
+          animationSectionCount: cue.animation.sectionAnimationCount,
           animationReuseCount: cue.animation.reuseCount,
           animationCandidateCount: cue.animation.candidateCount,
           eventPlacement,
@@ -1095,10 +1151,41 @@ async function main() {
   if (!cameoPaletteId) throw new Error("没有找到当前资料库的 CAMEO.PAL");
   const kinds = ["infantry"];
   const selectedGroups = Object.fromEntries(kinds.map((kind) => {
-    const groups = prepareGroups(plan.groups.filter((group) => group.kind === kind), plan.source.id, cameoPaletteId);
+    const groups = prepareGroups(plan.groups.filter((group) => (
+      group.kind === kind
+      && (!UNIT_FILTER.size || UNIT_FILTER.has(group.representative.id))
+    )), plan.source.id, cameoPaletteId);
     validateDescriptionMarkers(groups);
     return [kind, SMOKE ? smokeSelection(groups) : groups];
   }));
+  if (PLAN_ONLY) {
+    const animationPlan = {
+      createdAt: new Date().toISOString(),
+      units: [...UNIT_FILTER],
+      groups: selectedGroups.infantry.map((group) => ({
+        id: group.representative.id,
+        name: group.representative.name,
+        skippedInvalidSequences: group.invalidSequenceEvents,
+        animationCoverage: group.animationCoverage,
+        cues: group.cues.map((cue) => ({
+          assetId: cue.assetId,
+          slot: cue.slot,
+          eventName: cue.eventName,
+          animationEvent: cue.animation.event,
+          animationSequence: cue.animation.sequenceId,
+          animationRunId: cue.animation.runId,
+          playbackMode: cue.animation.playbackMode,
+          transitionEvents: cue.animation.transitionEvents,
+          introFrameCount: cue.animation.introFrames.length,
+          loopFrameCount: cue.animation.loopFrames.length,
+        })),
+      })),
+    };
+    const target = path.join(RUN_DIR, "animation-plan.json");
+    fs.writeFileSync(target, JSON.stringify(animationPlan, null, 2), "utf8");
+    console.log(JSON.stringify({ animationPlan: target, groups: animationPlan.groups.length }, null, 2));
+    return;
+  }
   for (const kind of kinds) {
     if (!selectedGroups[kind].length) throw new Error(`${kind} 没有可录制的单位声音`);
     await prewarmBackend(selectedGroups[kind]);
@@ -1118,6 +1205,7 @@ async function main() {
     resolution: { width: SOURCE_WIDTH, height: SOURCE_HEIGHT },
     frameRate: FPS,
     smoke: SMOKE,
+    unitFilter: [...UNIT_FILTER],
     selection: plan.selection,
     planSummary: plan.summary,
     excludedUnits: plan.excludedUnits,

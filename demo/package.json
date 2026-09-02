@@ -8,6 +8,8 @@
     "audio:verify": "node verify-cable-route.cjs",
     "record": "node record-showcase.cjs",
     "voices:plan": "node plan-soviet-voices.cjs",
+    "voices:animations:inspect": "node inspect-animation-data.cjs",
+    "voices:animations:test": "node test-voice-animation-planner.cjs",
     "voices:record": "node record-soviet-voices.cjs",
     "voices:render": "node render-soviet-voices.cjs",
     "voices:qa": "node qa-soviet-voices.cjs",

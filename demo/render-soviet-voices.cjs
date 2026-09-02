@@ -60,7 +60,7 @@ for (const segment of manifest.segments) {
     "-filter_complex",
     `[1:a]aresample=48000,adelay=${delay}|${delay},apad,atrim=duration=${duration.toFixed(3)},volume=0.92,alimiter=limit=0.96[aout]`,
     "-map", "0:v:0", "-map", "[aout]",
-    "-vf", `scale=${CONFIG.output.width}:${CONFIG.output.height}:flags=lanczos,fade=t=in:st=0:d=0.4,fade=t=out:st=${fadeOutStart}:d=0.55,format=yuv420p`,
+    "-vf", `scale=${CONFIG.output.width}:${CONFIG.output.height}:flags=lanczos,fade=t=out:st=${fadeOutStart}:d=0.55,format=yuv420p`,
     "-r", String(CONFIG.output.frameRate),
     "-c:v", "libx264", "-preset", "slow", "-crf", String(CONFIG.output.videoCrf),
     "-c:a", "aac", "-b:a", CONFIG.output.audioBitrate, "-ar", "48000",

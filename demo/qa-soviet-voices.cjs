@@ -30,6 +30,15 @@ function probe(file, chapters = false) {
   return JSON.parse(run("ffprobe.exe", args));
 }
 
+function firstFrameLuma(file) {
+  const result = spawnSync("ffmpeg.exe", [
+    "-hide_banner", "-loglevel", "info", "-i", file,
+    "-vf", "signalstats,metadata=print", "-frames:v", "1", "-f", "null", "NUL",
+  ], { encoding: "utf8", windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+  if (result.status !== 0) throw new Error(`无法检查首帧亮度\n${result.stderr || result.stdout}`);
+  return Number(`${result.stdout || ""}\n${result.stderr || ""}`.match(/lavfi\.signalstats\.YAVG=([0-9.]+)/)?.[1]);
+}
+
 const checks = [];
 const failures = [];
 function check(name, condition, details) {
@@ -55,8 +64,16 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: CABLE 输出路由生效`, segment.cableRouting?.sinkIdApplied === true && /CABLE Input/i.test(segment.cableRouting?.outputLabel || ""), segment.cableRouting);
   check(`${segment.id}: CABLE 延迟在合理范围`, Number(segment.cableCaptureLatency) >= 0 && Number(segment.cableCaptureLatency) < 1.5, segment.cableCaptureLatency);
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
+  check(`${segment.id}: 首帧录制前已显示标题`, segment.initialTransition?.preparedBeforeCapture === true
+    && segment.initialTransition?.title === "苏军步兵单位语音"
+    && segment.initialTransition?.titleVisible === true
+    && Number(segment.initialTransition?.opacity) === 1, segment.initialTransition);
+  check(`${segment.id}: 主体画布位于文本图层上方`, Number(segment.presentationLayout?.subjectLayerZ) > Number(segment.presentationLayout?.transcriptLayerZ), segment.presentationLayout);
+  check(`${segment.id}: 主体画布覆盖字幕所在高度`, segment.presentationLayout?.subjectCanvasCrossesTranscript === true, segment.presentationLayout);
   const ivanLayout = segment.visualLayouts?.IVAN;
-  check(`${segment.id}: 使用疯狂伊文主体尺度基准`, ivanLayout?.targetUnit === "IVAN" && ivanLayout?.basis === "height", ivanLayout);
+  check(`${segment.id}: 使用疯狂伊文主体尺度基准`, ivanLayout
+    ? ivanLayout.targetUnit === "IVAN" && ivanLayout.basis === "height"
+    : Object.values(segment.visualLayouts || {}).every((layout) => layout.targetUnit === "IVAN"), ivanLayout || segment.visualLayouts);
   const targetSpan = Number(CONFIG.visual.subjectSpan);
   for (const group of segment.groups || []) {
     const groupCues = (segment.audioCues || []).filter((cue) => cue.unitId === group.id);
@@ -83,6 +100,30 @@ for (const segment of showcase.segments || []) {
       cueCount: groupCues.length,
       animationSequences: [...animationSequences],
     });
+    const sectionKeys = [...new Set(groupCues.map((cue) => cue.animationSectionKey))];
+    for (const sectionKey of sectionKeys) {
+      const sectionCues = groupCues.filter((cue) => cue.animationSectionKey === sectionKey);
+      const plannedCount = Number(sectionCues[0]?.animationSectionCount || 1);
+      const runIds = new Set(sectionCues.map((cue) => cue.animationRunId));
+      const sectionSequences = new Set(sectionCues.map((cue) => cue.animationSequence));
+      check(`${segment.id}/${group.id}/${sectionKey}: 动作种类符合预计算`, sectionSequences.size <= plannedCount, {
+        cueCount: sectionCues.length,
+        plannedCount,
+        sequences: [...sectionSequences],
+        runs: [...runIds],
+      });
+      if (sectionCues[0]?.slot !== "die" && sectionCues.length > plannedCount) {
+        check(`${segment.id}/${group.id}/${sectionKey}: 相邻语音保留稳定动作`, sectionCues.some((cue, index) => (
+          index > 0 && cue.animationRunId === sectionCues[index - 1].animationRunId
+        )), sectionCues.map((cue) => cue.animationRunId));
+      }
+    }
+    const deathCues = groupCues.filter((cue) => cue.slot === "die");
+    check(`${segment.id}/${group.id}: 相邻阵亡声音尽量交替动作`, deathCues.every((cue, index) => (
+      index === 0
+      || Number(cue.animationCandidateCount) <= 1
+      || cue.animationSequence !== deathCues[index - 1].animationSequence
+    )), deathCues.map((cue) => cue.animationSequence));
   }
   for (const [cueIndex, cue] of (segment.audioCues || []).entries()) {
     const translation = cue.translated || cue.localized || "";
@@ -111,8 +152,29 @@ for (const segment of showcase.segments || []) {
       reuseCount: cue.animationReuseCount,
       sequence: cue.animationSequence,
     });
-    check(`${segment.id}/${cue.assetId}: 事件文字未碰撞主体`, Number(cue.eventPlacement?.collisionFrames) === 0, cue.eventPlacement);
+    check(`${segment.id}/${cue.assetId}: 事件文字固定在单位名称下方 45px`, cue.eventPlacement?.strategy === "fixed-under-unit-name"
+      && Math.abs(Number(cue.eventPlacement?.gapFromUnitName) - Number(CONFIG.visual.eventGapBelowName)) < 1
+      && Math.abs(Number(cue.eventPlacement?.centerX) - Number(CONFIG.viewport.width) / 2) < 1, cue.eventPlacement);
     check(`${segment.id}/${cue.assetId}: 事件文字完整位于画面内`, cue.eventPlacement?.insideViewport === true, cue.eventPlacement);
+    check(`${segment.id}/${cue.assetId}: 动画主体可覆盖字幕文字`, cue.eventPlacement?.subjectLayerAboveTranscript === true
+      && cue.eventPlacement?.subjectCanvasCrossesTranscript === true, cue.eventPlacement);
+    check(`${segment.id}/${cue.assetId}: 主循环不是姿态过渡片段`, !/^(?:down|up)$/i.test(cue.animationEvent)
+      && (cue.animationPlaybackMode === "once-hold" || Number(cue.animationLoopFrameCount) >= 3), {
+      animationEvent: cue.animationEvent,
+      playbackMode: cue.animationPlaybackMode,
+      loopFrames: cue.animationLoopFrameCount,
+    });
+    check(`${segment.id}/${cue.assetId}: 两帧姿态动作只作为过渡`, (cue.animationTransitionEvents || []).every((event) => /^(?:down|up)$/i.test(event))
+      && (!(cue.animationTransitionEvents || []).length || Number(cue.animationIntroFrameCount) === 2), {
+      transitionEvents: cue.animationTransitionEvents,
+      introFrames: cue.animationIntroFrameCount,
+    });
+    check(`${segment.id}/${cue.assetId}: 循环动作具有可见帧变化`, cue.animationPlaybackMode !== "loop"
+      || Number(cue.animationDistinctLoopFrames) >= 2, {
+      sequence: cue.animationSequence,
+      frames: cue.animationLoopFrameCount,
+      distinctFrames: cue.animationDistinctLoopFrames,
+    });
     check(`${segment.id}/${cue.assetId}: 反馈事件名称遵循 VoiceFeedback 规则字段`, cue.slot !== "feedback" || cue.eventLabel === "受击", {
       eventName: cue.eventName,
       expected: "受击",
@@ -126,6 +188,12 @@ for (const segment of showcase.segments || []) {
     check(`${segment.id}/${cue.assetId}: 时长有效`, Number(cue.duration) > 0, cue.duration);
     if (cueIndex > 0) {
       const previous = segment.audioCues[cueIndex - 1];
+      if (cue.animationRunId === previous.animationRunId) {
+        check(`${segment.id}/${cue.assetId}: 同一动作段不中途重启动画`, cue.eventPlacement?.animationChanged === false, {
+          runId: cue.animationRunId,
+          animationChanged: cue.eventPlacement?.animationChanged,
+        });
+      }
       minimumCueSeparation = Math.min(
         minimumCueSeparation,
         Number(cue.start) - Number(previous.start) - Number(previous.duration),
@@ -161,8 +229,10 @@ check(`覆盖 ${expectedCues} 条单位声音`, cueCount === expectedCues, cueCo
 const finalProbe = probe(FINAL_VIDEO, true);
 const finalVideo = finalProbe.streams.find((stream) => stream.codec_type === "video");
 const finalAudio = finalProbe.streams.find((stream) => stream.codec_type === "audio");
+const finalFirstFrameLuma = firstFrameLuma(FINAL_VIDEO);
 check(`最终视频为 H.264 ${CONFIG.output.width}×${CONFIG.output.height}`, finalVideo?.codec_name === "h264" && finalVideo?.width === CONFIG.output.width && finalVideo?.height === CONFIG.output.height, finalVideo);
 check("最终视频为 30 fps", finalVideo?.r_frame_rate === `${CONFIG.output.frameRate}/1`, finalVideo?.r_frame_rate);
+check("最终视频从首帧直接显示片头", finalFirstFrameLuma > 25, finalFirstFrameLuma);
 check("最终音频为 AAC 48 kHz 双声道", finalAudio?.codec_name === "aac" && finalAudio?.sample_rate === "48000" && finalAudio?.channels === 2, finalAudio);
 check("单位章节数正确", finalProbe.chapters?.length === groupCount, { expected: groupCount, actual: finalProbe.chapters?.length });
 check("最终时长与清单一致", Math.abs(Number(finalProbe.format.duration) - Number(showcase.duration)) < 0.08, { media: finalProbe.format.duration, manifest: showcase.duration });
