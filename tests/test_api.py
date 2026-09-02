@@ -20,6 +20,8 @@ from ra2_explorer.semantic import (
     GameEntity,
     MediaAssociation,
     MediaSample,
+    SemanticCatalog,
+    SemanticLibrary,
     VoiceText,
     _art_animation_playback,
     _art_end_is_frame_count,
@@ -663,7 +665,7 @@ def test_art_animation_playback_stops_before_a_shared_damaged_state() -> None:
     assert _art_sibling_frame_count("IDLE_DAMAGED", sections["idle_damaged"], sections) is None
 
 
-def test_eva_events_read_russian_field_without_using_unit_names_as_transcripts() -> None:
+def test_eva_unit_intros_keep_distinct_recordings_under_the_semantic_advisor() -> None:
     boomer = GameEntity(
         id="BSUB",
         kind="vehicle",
@@ -696,12 +698,112 @@ def test_eva_events_read_russian_field_without_using_unit_names_as_transcripts()
         (boomer,),
     )
 
-    assert [event.slot for event in events] == ["eva_allied", "eva_soviet"]
+    assert [event.slot for event in events] == ["advisor_eva", "advisor_eva"]
     assert {event.samples[0].name for event in events} == {"CEVAU39", "CSOFU39"}
     for event in events:
         assert event.samples[0].text is None
         assert event.samples[0].original_text is None
         assert event.samples[0].localized_text is None
+
+
+def test_eva_unit_intros_collapse_identical_player_faction_variants() -> None:
+    events = _build_eva_events(
+        {
+            "unit_eva_ifv": {
+                "allied": "CEVAU22",
+                "russian": "CEVAU22",
+            },
+            "unit_sofia_boris": {
+                "allied": "CSOFU82",
+                "russian": "CSOFU82",
+            },
+        },
+        _AssetIndex({}, {}),
+        {},
+    )
+
+    assert [
+        (event.event, event.slot, event.samples[0].name)
+        for event in events
+    ] == [
+        ("unit_eva_ifv", "advisor_eva", "CEVAU22"),
+        ("unit_sofia_boris", "advisor_sofia", "CSOFU82"),
+    ]
+
+
+def test_asset_associations_hide_legacy_unit_intro_player_variants() -> None:
+    asset = {
+        "id": "ifv-intro",
+        "display_name": "CEVAU22.WAV",
+        "format": "wav",
+        "virtual_path": "audio.mix::CEVAU22.WAV",
+        "size": 1024,
+        "storage_kind": "mix",
+    }
+    entity = GameEntity(
+        id="FV",
+        kind="vehicle",
+        usage="buildable",
+        display_name="多功能步兵战斗车",
+        internal_name="IFV",
+        ui_name="Name:FV",
+        ui_name_resolved=True,
+        image="FV",
+        voxel=True,
+        countries=("Americans",),
+        sides=("GDI",),
+        affiliation={"kind": "side", "id": "GDI", "display_name": "盟军"},
+        rules={},
+        art={},
+        components=(),
+        dependencies=(),
+        media=(),
+    )
+    sample = MediaSample("CEVAU22", "IFV briefing", asset)
+    legacy_events = (
+        MediaAssociation("voice", "eva_allied", "unit_eva_ifv", "eva", (sample,)),
+        MediaAssociation("voice", "eva_soviet", "unit_eva_ifv", "eva", (sample,)),
+    )
+    catalog = SemanticCatalog(
+        source_id="source",
+        entities=(entity,),
+        inputs={},
+        warnings=(),
+        audio_events={},
+        eva_events=legacy_events,
+        countries=(),
+        media_items=_build_media_items([asset], (entity,), {}, legacy_events, {}),
+    )
+
+    class AssociationDatabase:
+        def get_source(self, source_id: str) -> dict[str, object]:
+            return {
+                "id": source_id,
+                "scanned_at": "2026-09-03T00:00:00Z",
+                "asset_count": 1,
+                "state": "ready",
+            }
+
+        def get_asset(self, asset_id: str) -> dict[str, object]:
+            assert asset_id == asset["id"]
+            return asset
+
+    library = SemanticLibrary(AssociationDatabase(), object())  # type: ignore[arg-type]
+    library._cache["source"] = (
+        (
+            "2026-09-03T00:00:00Z",
+            1,
+            "ready",
+            library._voice_transcript_revision,
+        ),
+        catalog,
+    )
+
+    result = library.asset_associations("source", "ifv-intro")
+
+    assert result["total"] == 1
+    assert result["items"][0]["slot"] == "advisor_eva"
+    assert result["items"][0]["entity"]["id"] == "FV"
 
 
 def test_verified_unit_intro_overrides_csf_unit_name_text() -> None:

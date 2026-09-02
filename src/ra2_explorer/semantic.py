@@ -41,7 +41,7 @@ from ra2_explorer.storage import Database
 ENTITY_KINDS = ("vehicle", "infantry", "aircraft", "building")
 ENTITY_USAGES = ("buildable", "hero", "tech", "civilian", "scenario")
 UNAFFILIATED_SIDE = "unaffiliated"
-SEMANTIC_CATALOG_CACHE_IDENTITY = ("semantic-catalog-v21",)
+SEMANTIC_CATALOG_CACHE_IDENTITY = ("semantic-catalog-v22",)
 _PLANNING_SIDE_IDS = ("GDI", "Nod", "ThirdSide")
 _TYPE_SECTIONS = {
     "vehicle": "VehicleTypes",
@@ -1074,6 +1074,8 @@ class SemanticLibrary:
 
         for association in catalog.eva_events:
             event_entity = _eva_event_entity(association.event, entities_by_id)
+            semantic_slot = _unit_intel_advisor_slot(association.event)
+            display_slot = semantic_slot or association.slot
             for sample in association.samples:
                 if sample.asset and sample.asset["id"] == asset_id:
                     presented = (
@@ -1083,7 +1085,7 @@ class SemanticLibrary:
                         {
                             "scope": "event",
                             "kind": association.kind,
-                            "slot": association.slot,
+                            "slot": display_slot,
                             "event": association.event,
                             "entity": (
                                 event_entity.summary(language) if event_entity is not None else None
@@ -1100,7 +1102,7 @@ class SemanticLibrary:
                         },
                         (
                             "event",
-                            association.slot,
+                            display_slot,
                             association.event.casefold(),
                             sample.name.casefold(),
                         ),
@@ -2478,9 +2480,9 @@ def _build_media_items(
                     f"mission:{mission['key']}",
                     _mission_event_slot(asset_stem, (association.event,)),
                 )
-            elif event_name.startswith(("unit_eva_", "unit_sofia_")):
+            elif (advisor_slot := _unit_intel_advisor_slot(event_name)) is not None:
                 kind, group = "voice", "unit_intel_voice"
-                slot = "advisor_eva" if event_name.startswith("unit_eva_") else "advisor_sofia"
+                slot = advisor_slot
             elif event_name.startswith(("wwd_", "wwd-")):
                 kind, group = "voice", "world_domination_voice"
                 slot = association.slot
@@ -2939,8 +2941,10 @@ def _build_eva_events(
     entities: tuple[GameEntity, ...] = (),
 ) -> tuple[MediaAssociation, ...]:
     associations = []
+    seen_unit_intel_samples: set[tuple[str, str, str]] = set()
     for event, values in sections.items():
         fallback_voice_text = _eva_event_voice_text(event, values)
+        advisor_slot = _unit_intel_advisor_slot(event)
         for faction, fields in (
             ("allied", ("allied",)),
             ("soviet", ("soviet", "russian")),
@@ -2963,8 +2967,19 @@ def _build_eva_events(
                         localized_text_origin=fallback_voice_text.localized_text_origin,
                         translated_text=fallback_voice_text.translated_text,
                     )
+                slot = advisor_slot or f"eva_{faction}"
+                if advisor_slot is not None:
+                    sample_identity = (
+                        str(sample.asset["id"])
+                        if sample.asset is not None
+                        else sample.name.rsplit(".", 1)[0].casefold()
+                    )
+                    identity = (event.casefold(), advisor_slot, sample_identity)
+                    if identity in seen_unit_intel_samples:
+                        continue
+                    seen_unit_intel_samples.add(identity)
                 associations.append(
-                    MediaAssociation("voice", f"eva_{faction}", event, "eva", (sample,))
+                    MediaAssociation("voice", slot, event, "eva", (sample,))
                 )
     return tuple(associations)
 
@@ -2976,6 +2991,15 @@ def _eva_event_voice_text(
     configured = values.get("text")
     if configured:
         return VoiceText(f"EVA:{event}", configured, configured, None)
+    return None
+
+
+def _unit_intel_advisor_slot(event: str) -> str | None:
+    folded = event.casefold()
+    if folded.startswith("unit_eva_"):
+        return "advisor_eva"
+    if folded.startswith("unit_sofia_"):
+        return "advisor_sofia"
     return None
 
 

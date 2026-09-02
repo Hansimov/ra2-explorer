@@ -133,14 +133,28 @@ def test_bundled_unit_voice_translation_does_not_replace_original_text(tmp_path)
     assert "localized_text" not in entries["ilasmod"]
 
 
-def test_bundled_soviet_infantry_voice_translation_is_complete() -> None:
+def test_bundled_unit_voice_translation_catalog_is_well_formed() -> None:
     payload = json.loads(BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH.read_text(encoding="utf-8"))
 
-    assert len(payload["entries"]) == 168
+    assert len(payload["entries"]) == 268
     assert all(entry.get("translated_text") for entry in payload["entries"].values())
-    assert payload["entries"]["idogdiea"]["translated_text"] == "呜咽声"
+    for entry in payload["entries"].values():
+        text = entry["translated_text"]
+        translation_kind = entry.get("translation_kind", "dialogue")
+        if translation_kind == "nonverbal":
+            assert text.startswith("<") and text.endswith(">")
+        elif translation_kind == "mixed":
+            assert "<" in text and ">" in text
+        else:
+            assert "<" not in text and ">" not in text
+    assert payload["entries"]["idogdiea"]["translated_text"] == "<呜咽声>"
+    assert payload["entries"]["idogsela"]["translated_text"] == "汪！"
     assert payload["entries"]["ilasdia"]["translated_text"] == "无法呼吸！"
     assert payload["entries"]["iborcre"]["translated_text"] == "你不是鲍里斯的对手。"
+    assert payload["entries"]["dummy"] == {
+        "translated_text": "<静音占位>",
+        "translation_kind": "nonverbal",
+    }
 
 
 def test_audio_transcript_corrects_verified_rotated_harvest_groups(tmp_path) -> None:
