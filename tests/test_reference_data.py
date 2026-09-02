@@ -136,10 +136,11 @@ def test_bundled_unit_voice_translation_does_not_replace_original_text(tmp_path)
 def test_bundled_soviet_infantry_voice_translation_is_complete() -> None:
     payload = json.loads(BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH.read_text(encoding="utf-8"))
 
-    assert len(payload["entries"]) == 163
+    assert len(payload["entries"]) == 168
     assert all(entry.get("translated_text") for entry in payload["entries"].values())
     assert payload["entries"]["idogdiea"]["translated_text"] == "呜咽声"
     assert payload["entries"]["ilasdia"]["translated_text"] == "无法呼吸！"
+    assert payload["entries"]["iborcre"]["translated_text"] == "你不是鲍里斯的对手。"
 
 
 def test_audio_transcript_corrects_verified_rotated_harvest_groups(tmp_path) -> None:
