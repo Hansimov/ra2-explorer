@@ -147,15 +147,15 @@ function animationMatchesSlot(slot, animationEvent) {
   const patterns = {
     create: /cheer|idle|ready|guard/i,
     select: /idle|ready|guard|cheer/i,
-    move: /walk|fly|swim|move/i,
+    move: /walk|fly|swim|move|crawl|down|up/i,
     enter: /walk|enter/i,
     capture: /walk|capture|deploy/i,
-    deploy: /deploy|down|idle/i,
+    deploy: /deploy|down|crawl|up|idle/i,
     harvest: /work|harvest|walk/i,
     attack: /fire|attack|shoot|deploy/i,
     weapon: /fire|attack|shoot|deploy/i,
     special_attack: /deploy|fire|attack|shoot/i,
-    feedback: /down|tumble|idle|panic/i,
+    feedback: /down|crawl|up|panic/i,
     die: /die|death|tumble/i,
   };
   return (patterns[slot] || /preview|idle/i).test(String(animationEvent || ""));

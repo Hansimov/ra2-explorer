@@ -40,6 +40,7 @@ function check(name, condition, details) {
 let cueCount = 0;
 let groupCount = 0;
 let rawDuration = 0;
+let minimumCueSeparation = Infinity;
 check("使用语音自然时长", CONFIG.audio.timingMode === "natural", CONFIG.audio.timingMode);
 check("仅包含苏军步兵片段", showcase.segments?.length === 1 && showcase.segments[0]?.id === "infantry", (showcase.segments || []).map((segment) => segment.id));
 for (const segment of showcase.segments || []) {
@@ -62,6 +63,7 @@ for (const segment of showcase.segments || []) {
     const slotOrder = groupCues.map((cue) => SLOT_ORDER.get(cue.slot) ?? 50);
     const weaponTiers = groupCues.filter((cue) => cue.slot === "weapon").map((cue) => cue.weaponTier);
     const layout = segment.visualLayouts?.[group.id];
+    const animationSequences = new Set(groupCues.map((cue) => cue.animationSequence));
     check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Math.abs(Number(layout?.displaySpan) - targetSpan) <= 1, layout);
     check(`${segment.id}/${group.id}: 主体锚点有效`, [layout?.anchorX, layout?.anchorY, layout?.scale].every(Number.isFinite), layout);
     check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, group.id !== "DOG" || layout?.basis === "width", layout);
@@ -71,8 +73,18 @@ for (const segment of showcase.segments || []) {
     check(`${segment.id}/${group.id}: 精英武器声音位于普通武器之后`, weaponTiers.every((tier, index) => (
       index === 0 || weaponTiers[index - 1] !== "elite" || tier === "elite"
     )), weaponTiers);
+    check(`${segment.id}/${group.id}: 动作覆盖统计与实际录制一致`, animationSequences.size === Number(group.animationCoverage?.unique), {
+      expected: group.animationCoverage,
+      actualUnique: animationSequences.size,
+    });
+    check(`${segment.id}/${group.id}: 多条声音使用多种兼容动作`, groupCues.length < 2
+      || !groupCues.some((cue) => Number(cue.animationCandidateCount) > 1)
+      || animationSequences.size > 1, {
+      cueCount: groupCues.length,
+      animationSequences: [...animationSequences],
+    });
   }
-  for (const cue of segment.audioCues || []) {
+  for (const [cueIndex, cue] of (segment.audioCues || []).entries()) {
     const translation = cue.translated || cue.localized || "";
     const originalHasCue = /<[^<>]+>/.test(cue.original || "");
     check(`${segment.id}/${cue.assetId}: 含可展示文本`, Boolean(cue.original || cue.translated || cue.localized), { original: cue.original, translated: cue.translated, localized: cue.localized });
@@ -93,13 +105,39 @@ for (const segment of showcase.segments || []) {
       slot: cue.slot,
       animationEvent: cue.animationEvent,
     });
+    check(`${segment.id}/${cue.assetId}: 动作候选与复用统计有效`, Number(cue.animationCandidateCount) >= 1
+      && Number(cue.animationReuseCount) >= 0, {
+      candidateCount: cue.animationCandidateCount,
+      reuseCount: cue.animationReuseCount,
+      sequence: cue.animationSequence,
+    });
+    check(`${segment.id}/${cue.assetId}: 事件文字未碰撞主体`, Number(cue.eventPlacement?.collisionFrames) === 0, cue.eventPlacement);
+    check(`${segment.id}/${cue.assetId}: 事件文字完整位于画面内`, cue.eventPlacement?.insideViewport === true, cue.eventPlacement);
     check(`${segment.id}/${cue.assetId}: 反馈事件名称遵循 VoiceFeedback 规则字段`, cue.slot !== "feedback" || cue.eventLabel === "受击", {
       eventName: cue.eventName,
       expected: "受击",
       actual: cue.eventLabel,
     });
+    check(`${segment.id}/${cue.assetId}: 阵亡动作仅用于阵亡声音`, cue.slot === "die"
+      || !/die|death|airdeath|tumble/i.test(cue.animationEvent), {
+      slot: cue.slot,
+      animationEvent: cue.animationEvent,
+    });
     check(`${segment.id}/${cue.assetId}: 时长有效`, Number(cue.duration) > 0, cue.duration);
+    if (cueIndex > 0) {
+      const previous = segment.audioCues[cueIndex - 1];
+      minimumCueSeparation = Math.min(
+        minimumCueSeparation,
+        Number(cue.start) - Number(previous.start) - Number(previous.duration),
+      );
+    }
   }
+  const expectedSeparation = Number(CONFIG.audio.cueLeadSeconds) + Number(CONFIG.audio.cueGapSeconds);
+  check(`${segment.id}: 相邻声音留有舒适间隔`, !Number.isFinite(minimumCueSeparation)
+    || minimumCueSeparation >= expectedSeparation - 0.12, {
+    expected: expectedSeparation,
+    minimum: minimumCueSeparation,
+  });
   const rawPath = path.join(RUN_DIR, segment.rawVideo);
   const rawProbe = probe(rawPath);
   const video = rawProbe.streams.find((stream) => stream.codec_type === "video");
@@ -144,6 +182,7 @@ const report = {
     finalDuration: Number(finalProbe.format.duration),
     finalBytes: Number(finalProbe.format.size),
     chapters: finalProbe.chapters?.length || 0,
+    minimumCueSeparation: Number.isFinite(minimumCueSeparation) ? minimumCueSeparation : null,
     resolution: { width: finalVideo?.width, height: finalVideo?.height },
     frameRate: finalVideo?.r_frame_rate,
   },

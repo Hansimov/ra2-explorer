@@ -114,12 +114,14 @@ function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
       : ["TERROR", "IVAN"].includes(unitId) ? [["deploy"], ["fireup"]]
         : [["fireup"], ["deployedfire"], ["fireprone"]];
   const preferences = {
-    select: [["idle1", "idle2", "ready", "guard"], ["cheer"], ["walk"]],
-    create: [["cheer"], ["idle1", "idle2"], ["walk"]],
-    move: flying ? [["fly"], ["walk"]] : [["walk", "swim"], ["idle1", "idle2"]],
-    enter: [["walk", "enter"], ["idle1", "idle2"]],
-    capture: [["walk", "capture"], ["deploy"], ["idle1", "idle2"]],
-    deploy: [["deploy"], ["deployedfire"], ["down"], ["idle1", "idle2"]],
+    select: [["idle1", "idle2"], ["ready", "guard"]],
+    create: [["cheer"], ["ready", "guard"], ["idle1", "idle2"]],
+    move: flying
+      ? [["fly"], ["walk", "swim"], ["crawl"], ["down"], ["up"]]
+      : [["walk", "swim"], ["crawl"], ["down"], ["up"]],
+    enter: [["walk", "enter"]],
+    capture: [["walk", "capture"], ["deploy"]],
+    deploy: [["deploy"], ["down"], ["deployedfire"], ["crawl"], ["up"]],
     harvest: [["work", "harvest"], ["walk"], ["idle1", "idle2"]],
     attack: (
       unitId === "LUNR" ? [["firefly"], ["fireup"]]
@@ -127,26 +129,25 @@ function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
           : [["fireup"], ["deployedfire"], ["fireprone"]]
     ),
     weapon: weaponPreferences,
-    special_attack: [["deploy", "deployedfire"], ["firefly", "fireup"], ["idle1", "idle2"]],
+    special_attack: [["deploy", "deployedfire"], ["firefly", "fireup"]],
     feedback: (
-      unitId === "LUNR" ? [["tumble"], ["down"], ["idle2", "idle1"]]
-        : unitId === "DOG" ? [["idle2", "idle1"]]
-          : [["down"], ["idle2", "idle1"]]
+      unitId === "LUNR" ? [["down"], ["crawl"], ["up"], ["panic"]]
+        : unitId === "DOG" ? [["panic"]]
+          : [["down"], ["crawl"], ["panic"], ["up"]]
     ),
     die: unitId === "LUNR" ? [["airdeathstart"]] : [["die1", "die2"], ["death"]],
   };
+  const matched = [];
+  const seen = new Set();
   for (const names of preferences[slot] || preferences.select) {
-    const matched = [];
-    const seen = new Set();
     for (const sequence of sequences.filter((candidate) => sequenceNamed(candidate, names))) {
       const key = sequenceKey(sequence);
       if (seen.has(key)) continue;
       seen.add(key);
       matched.push(sequence);
     }
-    if (matched.length) return matched;
   }
-  return sequences.slice(0, 1);
+  return matched.length ? matched : sequences.slice(0, 1);
 }
 
 function sequenceFrames(visual, sequence) {
@@ -181,15 +182,31 @@ function animationPosture(event) {
   return /down|crawl|up|prone|die|death|tumble|deploy/i.test(String(event)) ? "low" : "normal";
 }
 
-function sequenceAnimation(group, slot, sourceId, ordinal, eventName) {
+function useSequence(sequenceUsage, sequenceId) {
+  const reuseCount = sequenceUsage.get(sequenceId) || 0;
+  sequenceUsage.set(sequenceId, reuseCount + 1);
+  return reuseCount;
+}
+
+function semanticAnimationEvent(sequence, slot) {
+  if (animationMatchesSlot(slot, sequence.event)) return sequence.event;
+  return (sequence.aliases || []).find((alias) => animationMatchesSlot(slot, alias))
+    || sequence.event;
+}
+
+function sequenceAnimation(group, slot, sourceId, eventName, sequenceUsage) {
   const visual = group.representative.visual;
   if (visual.bodyFormat === "vxl") {
     const facingOrder = [0, 7, 6, 5, 4, 3, 2, 1];
+    const sequenceId = "vxl:facing";
     return {
       event: "facing",
       frames: facingOrder.map((facing) => entityPreviewUrl(sourceId, group.representative.id, facing)),
       intervalMs: CONFIG.visual.voxelFacingIntervalMs,
       posture: "normal",
+      sequenceId,
+      reuseCount: useSequence(sequenceUsage, sequenceId),
+      candidateCount: 1,
     };
   }
   if (slot === "die" && group.representative.id === "LUNR") {
@@ -199,29 +216,46 @@ function sequenceAnimation(group, slot, sourceId, ordinal, eventName) {
       )))
       .filter(Boolean);
     if (airDeath.length === 2) {
+      const sequenceId = airDeath.map(sequenceKey).join("+");
       return {
         event: "airdeathstart+airdeathfinish",
         frames: airDeath.flatMap((sequence) => sequenceFrames(visual, sequence)),
         intervalMs: CONFIG.visual.frameIntervalMs,
         posture: "low",
+        sequenceId,
+        reuseCount: useSequence(sequenceUsage, sequenceId),
+        candidateCount: 1,
       };
     }
   }
   const candidates = sequenceCandidatesForSlot(visual, slot, group.representative.id, eventName);
-  const sequence = candidates.length ? candidates[ordinal % candidates.length] : null;
+  const sequence = candidates.reduce((selected, candidate) => {
+    if (!selected) return candidate;
+    return (sequenceUsage.get(sequenceKey(candidate)) || 0) < (sequenceUsage.get(sequenceKey(selected)) || 0)
+      ? candidate
+      : selected;
+  }, null);
   if (!sequence) {
+    const sequenceId = `preview:${group.representative.id}`;
     return {
       event: "preview",
       frames: [entityPreviewUrl(sourceId, group.representative.id, 5)],
       intervalMs: CONFIG.visual.frameIntervalMs,
       posture: "normal",
+      sequenceId,
+      reuseCount: useSequence(sequenceUsage, sequenceId),
+      candidateCount: 1,
     };
   }
+  const sequenceId = sequenceKey(sequence);
   return {
-    event: sequence.event,
+    event: semanticAnimationEvent(sequence, slot),
     frames: sequenceFrames(visual, sequence),
     intervalMs: Number(sequence.rate_ms) > 0 ? Number(sequence.rate_ms) : CONFIG.visual.frameIntervalMs,
     posture: animationPosture(sequence.event),
+    sequenceId,
+    reuseCount: useSequence(sequenceUsage, sequenceId),
+    candidateCount: candidates.length,
   };
 }
 
@@ -233,13 +267,11 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
     if (invalidSequenceEvents.length) {
       console.warn(`[visual] ${group.representative.name} 跳过越界动作：${invalidSequenceEvents.join("、")}`);
     }
-    const ordinalBySlot = new Map();
+    const sequenceUsage = new Map();
     const cues = group.cues.map((cue) => {
       const event = cue.primaryEvent || chooseCueEvent(cue, group.representative.id);
       const slot = event.slot || "select";
-      const ordinal = ordinalBySlot.get(slot) || 0;
-      ordinalBySlot.set(slot, ordinal + 1);
-      const animation = sequenceAnimation(group, slot, sourceId, ordinal, event.event);
+      const animation = sequenceAnimation(group, slot, sourceId, event.event, sequenceUsage);
       if (!animationMatchesSlot(slot, animation.event)) {
         throw new Error(`${group.representative.name}/${cue.assetName} 的 ${slot} 事件错误匹配到 ${animation.event}`);
       }
@@ -251,6 +283,7 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
         animation,
       };
     });
+    const uniqueAnimationCount = new Set(cues.map((cue) => cue.animation.sequenceId)).size;
     return {
       ...group,
       cameoUrl: group.representative.visual.cameoAssetId
@@ -261,6 +294,7 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
         })
         : entityPreviewUrl(sourceId, group.representative.id, 5, 5),
       invalidSequenceEvents,
+      animationCoverage: { assigned: cues.length, unique: uniqueAnimationCount },
       cues,
     };
   });
@@ -284,6 +318,7 @@ function validateDescriptionMarkers(groups) {
 function smokeSelection(groups) {
   const extraSlots = {
     E2: ["weapon", "feedback", "die"],
+    SHK: ["weapon"],
     LUNR: ["move", "weapon", "feedback", "die"],
     DOG: ["weapon", "feedback", "die"],
     DESO: ["weapon", "die"],
@@ -291,7 +326,18 @@ function smokeSelection(groups) {
   return groups.map((group) => {
     const slots = [group.cues[0]?.slot, ...(extraSlots[group.representative.id] || [])].filter(Boolean);
     const cues = slots.map((slot) => group.cues.find((cue) => cue.slot === slot)).filter(Boolean);
-    return { ...group, cues: [...new Map(cues.map((cue) => [cue.assetId, cue])).values()] };
+    if (group.representative.id === "SHK") {
+      cues.push(group.cues.find((cue) => cue.slot === "weapon" && cue.weaponTier === "elite"));
+    }
+    const selected = [...new Map(cues.filter(Boolean).map((cue) => [cue.assetId, cue])).values()];
+    return {
+      ...group,
+      animationCoverage: {
+        assigned: selected.length,
+        unique: new Set(selected.map((cue) => cue.animation.sequenceId)).size,
+      },
+      cues: selected,
+    };
   });
 }
 
@@ -341,17 +387,177 @@ function presentationHtml() {
   const subjectStageTop = 8 - SUBJECT_HEADER_OVERLAP;
   const normalBaseline = SUBJECT_BASELINE_NORMAL + SUBJECT_HEADER_OVERLAP;
   const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
+  const unitFadeSeconds = Number(CONFIG.visual.unitFadeSeconds) || 0.38;
+  const unitSlideSeconds = Number(CONFIG.visual.unitSlideSeconds) || 0.56;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
     .shell{display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:16px 24px 8px;overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current strong{max-width:100%;overflow:hidden;color:#ef625c;font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
-    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:0;left:0;z-index:3;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity .28s ease}.voice-head{position:absolute;left:calc(50% + 160px);top:220px;z-index:4;display:flex;align-items:center;justify-content:flex-start;transition:opacity .28s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
-    .voice{display:grid;overflow:hidden;padding:0 42px 18px;transition:opacity .28s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
+    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:0;left:0;z-index:3;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;left:calc(50% + 160px);top:220px;z-index:4;display:flex;align-items:center;justify-content:flex-start;transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
+    .voice{display:grid;overflow:hidden;padding:0 42px 18px;transition:opacity ${unitFadeSeconds}s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
     .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:38px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:88px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:32px;font-weight:600}
-    .unit-track{transition:opacity .28s ease,transform .34s cubic-bezier(.22,.7,.22,1);will-change:opacity,transform}.unit-leaving .unit-track{opacity:0;transform:translateX(-82px) scale(.985)}.unit-entering .unit-track{opacity:0;transform:translateX(82px) scale(.985)}.unit-leaving .subject,.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .subject,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
+    .unit-track{transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1),filter ${unitFadeSeconds}s ease;will-change:opacity,transform,filter}.unit-leaving .unit-track{opacity:0;transform:translateX(-110px) scale(.965);filter:blur(3px)}.unit-entering .unit-track{opacity:0;transform:translateX(110px) scale(.965);filter:blur(3px)}.unit-leaving .subject{opacity:0;transform:translateX(-54px) scale(.985)}.unit-entering .subject{opacity:0;transform:translateX(54px) scale(.985)}.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
   </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
-    window.__voiceTimer=0;window.__voiceFrames={};window.__voiceLayouts={};window.__setFrames=(frames,interval,posture,unitId)=>{clearInterval(window.__voiceTimer);const canvas=document.querySelector('.subject');const context=canvas.getContext('2d');context.imageSmoothingEnabled=false;const layout=window.__voiceLayouts[unitId]||{scale:1,anchorX:0,anchorY:0,referenceWidth:1,referenceHeight:1};const sequence=frames.map(src=>window.__voiceFrames[src]).filter(Boolean);const scale=layout.scale;const baseline=posture==='low'?${lowBaseline}:${normalBaseline};const drawLeft=canvas.width/2-layout.anchorX*scale;const drawTop=baseline-layout.anchorY*scale;const frameRect=canvas.getBoundingClientRect();const visualRect=document.querySelector('.visual').getBoundingClientRect();const voiceHead=document.querySelector('.voice-head');const bodyRight=canvas.width/2+layout.referenceWidth*scale/2;const bodyTop=baseline-layout.referenceHeight*scale*(posture==='low'?0.58:1);const eventLeft=frameRect.left-visualRect.left+bodyRight*frameRect.width/canvas.width+18;const eventTop=frameRect.top-visualRect.top+bodyTop*frameRect.height/canvas.height+24;voiceHead.style.left=Math.min(visualRect.width-150,Math.max(40,eventLeft))+'px';voiceHead.style.top=Math.min(visualRect.height-80,Math.max(100,eventTop))+'px';let index=0;const apply=()=>{context.clearRect(0,0,canvas.width,canvas.height);const frame=sequence[index];if(frame)context.drawImage(frame.image,drawLeft,drawTop,frame.image.naturalWidth*scale,frame.image.naturalHeight*scale)};apply();if(sequence.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%sequence.length;apply()},Math.max(70,interval||110))};window.__fitOriginal=()=>{const text=document.querySelector('.original');const base=66;const limit=window.innerWidth*.8;text.style.fontSize=base+'px';const width=text.getBoundingClientRect().width;if(width>limit)text.style.fontSize=Math.max(28,base*limit/width)+'px'};
+    window.__voiceTimer = 0;
+    window.__voiceFrames = {};
+    window.__voiceLayouts = {};
+    window.__setFrames = (frames, interval, posture, unitId) => {
+      clearInterval(window.__voiceTimer);
+      const canvas = document.querySelector('.subject');
+      const context = canvas.getContext('2d');
+      context.imageSmoothingEnabled = false;
+      const layout = window.__voiceLayouts[unitId] || {
+        scale: 1, anchorX: 0, anchorY: 0, referenceWidth: 1, referenceHeight: 1,
+      };
+      const sequence = frames.map((src) => window.__voiceFrames[src]).filter(Boolean);
+      const scale = layout.scale;
+      const baseline = posture === 'low' ? ${lowBaseline} : ${normalBaseline};
+      const drawLeft = canvas.width / 2 - layout.anchorX * scale;
+      const drawTop = baseline - layout.anchorY * scale;
+      const frameRect = canvas.getBoundingClientRect();
+      const visual = document.querySelector('.visual');
+      const visualRect = visual.getBoundingClientRect();
+      const voiceHead = document.querySelector('.voice-head');
+      const cssScaleX = frameRect.width / canvas.width;
+      const cssScaleY = frameRect.height / canvas.height;
+      const canvasOffsetX = frameRect.left - visualRect.left;
+      const canvasOffsetY = frameRect.top - visualRect.top;
+      const margin = ${Number(CONFIG.visual.eventCollisionMargin) || 14};
+
+      const union = sequence.reduce((bounds, frame) => {
+        const opaque = frame.bounds || {
+          left: 0, top: 0, right: frame.image.naturalWidth, bottom: frame.image.naturalHeight,
+        };
+        const left = canvasOffsetX + (drawLeft + opaque.left * scale) * cssScaleX;
+        const top = canvasOffsetY + (drawTop + opaque.top * scale) * cssScaleY;
+        const right = canvasOffsetX + (drawLeft + opaque.right * scale) * cssScaleX;
+        const bottom = canvasOffsetY + (drawTop + opaque.bottom * scale) * cssScaleY;
+        return {
+          left: Math.min(bounds.left, left),
+          top: Math.min(bounds.top, top),
+          right: Math.max(bounds.right, right),
+          bottom: Math.max(bounds.bottom, bottom),
+        };
+      }, { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+      if (!Number.isFinite(union.left)) {
+        union.left = visualRect.width / 2 - layout.referenceWidth * scale * cssScaleX / 2;
+        union.right = visualRect.width / 2 + layout.referenceWidth * scale * cssScaleX / 2;
+        union.bottom = canvasOffsetY + baseline * cssScaleY;
+        union.top = union.bottom - layout.referenceHeight * scale * cssScaleY;
+      }
+
+      const labelRect = voiceHead.getBoundingClientRect();
+      const labelWidth = Math.max(1, labelRect.width);
+      const labelHeight = Math.max(1, labelRect.height);
+      const bodyHeight = Math.max(1, union.bottom - union.top);
+      const preferredTop = union.top + bodyHeight * (posture === 'low' ? 0.12 : 0.2);
+      const gap = 22;
+      const rawCandidates = [
+        { strategy: 'right-upper', left: union.right + gap, top: preferredTop },
+        { strategy: 'right-center', left: union.right + gap, top: union.top + bodyHeight * 0.44 },
+        { strategy: 'above-right', left: union.right - labelWidth, top: union.top - labelHeight - gap },
+        { strategy: 'left-upper', left: union.left - labelWidth - gap, top: preferredTop },
+        { strategy: 'left-center', left: union.left - labelWidth - gap, top: union.top + bodyHeight * 0.44 },
+        { strategy: 'above-left', left: union.left, top: union.top - labelHeight - gap },
+        { strategy: 'visual-right', left: visualRect.width - labelWidth - 24, top: preferredTop },
+        { strategy: 'visual-left', left: 24, top: preferredTop },
+      ];
+
+      const collisionTiles = (frame, rect) => {
+        const collision = frame.collision;
+        if (!collision) return 0;
+        const canvasLeft = (rect.left - canvasOffsetX) / cssScaleX;
+        const canvasTop = (rect.top - canvasOffsetY) / cssScaleY;
+        const canvasRight = (rect.right - canvasOffsetX) / cssScaleX;
+        const canvasBottom = (rect.bottom - canvasOffsetY) / cssScaleY;
+        const sourceLeft = (canvasLeft - drawLeft) / scale;
+        const sourceTop = (canvasTop - drawTop) / scale;
+        const sourceRight = (canvasRight - drawLeft) / scale;
+        const sourceBottom = (canvasBottom - drawTop) / scale;
+        if (
+          sourceRight <= 0 || sourceBottom <= 0
+          || sourceLeft >= frame.image.naturalWidth || sourceTop >= frame.image.naturalHeight
+        ) return 0;
+        const startColumn = Math.max(0, Math.floor(sourceLeft / collision.tileSize));
+        const endColumn = Math.min(collision.columns - 1, Math.floor((sourceRight - 0.01) / collision.tileSize));
+        const startRow = Math.max(0, Math.floor(sourceTop / collision.tileSize));
+        const endRow = Math.min(collision.rows - 1, Math.floor((sourceBottom - 0.01) / collision.tileSize));
+        let hits = 0;
+        for (let row = startRow; row <= endRow; row += 1) {
+          for (let column = startColumn; column <= endColumn; column += 1) {
+            hits += collision.occupied[row * collision.columns + column] ? 1 : 0;
+          }
+        }
+        return hits;
+      };
+
+      const candidates = rawCandidates.map((candidate, index) => {
+        const left = Math.max(24, Math.min(visualRect.width - labelWidth - 24, candidate.left));
+        const top = Math.max(64, Math.min(visualRect.height - labelHeight - 24, candidate.top));
+        const collisionRect = {
+          left: left - margin,
+          top: top - margin,
+          right: left + labelWidth + margin,
+          bottom: top + labelHeight + margin,
+        };
+        const frameHits = sequence.map((frame) => collisionTiles(frame, collisionRect));
+        const collisionFrames = frameHits.filter((hits) => hits > 0).length;
+        const occupiedTiles = frameHits.reduce((total, hits) => total + hits, 0);
+        const distance = Math.hypot(left - (union.right + gap), top - preferredTop);
+        return {
+          ...candidate,
+          left,
+          top,
+          collisionFrames,
+          occupiedTiles,
+          score: collisionFrames * 100000000 + occupiedTiles * 10000 + distance + index,
+        };
+      }).sort((left, right) => left.score - right.score);
+      const placement = candidates[0];
+      voiceHead.style.left = placement.left + 'px';
+      voiceHead.style.top = placement.top + 'px';
+
+      let index = 0;
+      const apply = () => {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        const frame = sequence[index];
+        if (frame) {
+          context.drawImage(
+            frame.image,
+            drawLeft,
+            drawTop,
+            frame.image.naturalWidth * scale,
+            frame.image.naturalHeight * scale,
+          );
+        }
+      };
+      apply();
+      if (sequence.length > 1) {
+        window.__voiceTimer = setInterval(() => {
+          index = (index + 1) % sequence.length;
+          apply();
+        }, Math.max(70, interval || 110));
+      }
+      return {
+        strategy: placement.strategy,
+        left: placement.left,
+        top: placement.top,
+        collisionFrames: placement.collisionFrames,
+        occupiedTiles: placement.occupiedTiles,
+        insideViewport: placement.left >= 0 && placement.top >= 0
+          && placement.left + labelWidth <= visualRect.width
+          && placement.top + labelHeight <= visualRect.height,
+      };
+    };
+    window.__fitOriginal = () => {
+      const text = document.querySelector('.original');
+      const base = 66;
+      const limit = window.innerWidth * .8;
+      text.style.fontSize = base + 'px';
+      const width = text.getBoundingClientRect().width;
+      if (width > limit) text.style.fontSize = Math.max(28, base * limit / width) + 'px';
+    };
   </script></body></html>`;
 }
 
@@ -377,7 +583,8 @@ async function installPresentation(page, kind, groups) {
   const targetSpan = Number(CONFIG.visual.subjectSpan) || 576;
   const headerOverlap = SUBJECT_HEADER_OVERLAP;
   const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
-  const visualLayouts = await page.evaluate(async ({ values, frameGroups, targetSpan, headerOverlap, lowBaseline }) => {
+  const collisionTileSize = Number(CONFIG.visual.eventCollisionTileSize) || 8;
+  const visualLayouts = await page.evaluate(async ({ values, frameGroups, targetSpan, headerOverlap, lowBaseline, collisionTileSize }) => {
     const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
       const image = new Image();
@@ -404,11 +611,17 @@ async function installPresentation(page, kind, groups) {
       let top = scratch.height;
       let right = -1;
       let bottom = -1;
+      const columns = Math.ceil(scratch.width / collisionTileSize);
+      const rows = Math.ceil(scratch.height / collisionTileSize);
+      const occupied = new Uint8Array(columns * rows);
       for (let y = 0; y < scratch.height; y += 2) {
         for (let x = 0; x < scratch.width; x += 2) {
           const offset = (y * scratch.width + x) * 4;
           const alpha = pixels[offset + 3];
           const brightness = pixels[offset] + pixels[offset + 1] + pixels[offset + 2];
+          if (alpha >= 40 && brightness >= 18) {
+            occupied[Math.floor(y / collisionTileSize) * columns + Math.floor(x / collisionTileSize)] = 1;
+          }
           if (alpha < 40 || brightness < 36) continue;
           left = Math.min(left, x);
           top = Math.min(top, y);
@@ -420,6 +633,7 @@ async function installPresentation(page, kind, groups) {
         ? { left, top, right: right + 1, bottom: bottom + 1, width: right - left + 1, height: bottom - top + 1 }
         : { left: 0, top: 0, right: image.naturalWidth, bottom: image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
       records[src].bounds = bounds;
+      records[src].collision = { tileSize: collisionTileSize, columns, rows, occupied };
       measured.set(src, bounds);
       return bounds;
     };
@@ -445,6 +659,7 @@ async function installPresentation(page, kind, groups) {
       };
     });
     const ivan = samples.find((sample) => sample.unitId === "IVAN");
+    values.forEach(boundsFor);
     const layouts = {};
     for (const sample of samples) {
       const dimension = sample.unitId === "DOG" ? sample.referenceWidth : sample.referenceHeight;
@@ -465,7 +680,7 @@ async function installPresentation(page, kind, groups) {
     window.__voiceFrames = records;
     window.__voiceLayouts = layouts;
     return layouts;
-  }, { values: urls, frameGroups, targetSpan, headerOverlap, lowBaseline });
+  }, { values: urls, frameGroups, targetSpan, headerOverlap, lowBaseline, collisionTileSize });
   console.log(`[visual] 以疯狂伊文为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
   const audioAssets = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
     cue.assetId,
@@ -509,7 +724,10 @@ async function showUnit(page, groups, groupIndex) {
     document.body.classList.remove("unit-entering");
     document.body.classList.add("unit-leaving");
   });
-  await page.waitForTimeout(180);
+  const totalMs = Math.max(900, CONFIG.visual.unitIntroSeconds * 1000);
+  const leaveMs = Math.min(totalMs - 100, (Number(CONFIG.visual.unitFadeSeconds) || 0.38) * 1000);
+  const stageMs = 40;
+  await page.waitForTimeout(leaveMs);
   const group = groups[groupIndex];
   const previousGroup = groups[groupIndex - 1];
   const nextGroup = groups[groupIndex + 1];
@@ -538,13 +756,16 @@ async function showUnit(page, groups, groupIndex) {
     document.body.classList.remove("unit-leaving");
     document.body.classList.add("unit-entering");
   }, { group, previous, next });
-  await page.waitForTimeout(34);
+  await page.waitForTimeout(stageMs);
   await page.evaluate(() => document.body.classList.remove("unit-entering"));
-  await page.waitForTimeout(Math.max(0, CONFIG.visual.unitIntroSeconds * 1000 - 214));
+  await page.waitForTimeout(Math.max(
+    (Number(CONFIG.visual.unitSlideSeconds) || 0.56) * 1000,
+    totalMs - leaveMs - stageMs,
+  ));
 }
 
 async function showCue(page, group, cue, cueIndex, segmentCueIndex, totalCues) {
-  await page.evaluate(({ cue, unitId, segmentCueIndex, totalCues }) => {
+  return page.evaluate(({ cue, unitId, segmentCueIndex, totalCues }) => {
     const original = cue.original || cue.translated || cue.localized || cue.assetName || "";
     const chinese = cue.translated || cue.localized || "";
     document.querySelector(".event b").textContent = cue.eventLabel;
@@ -554,7 +775,7 @@ async function showCue(page, group, cue, cueIndex, segmentCueIndex, totalCues) {
     document.querySelector(".original-block").classList.toggle("hidden", !original);
     document.querySelector(".localized-block").classList.toggle("hidden", !chinese || chinese === original);
     document.querySelector(".progress b").style.width = `${((segmentCueIndex + 1) / totalCues) * 100}%`;
-    window.__setFrames(cue.animation.frames, cue.animation.intervalMs, cue.animation.posture, unitId);
+    return window.__setFrames(cue.animation.frames, cue.animation.intervalMs, cue.animation.posture, unitId);
   }, {
     cue,
     unitId: group.representative.id,
@@ -774,6 +995,7 @@ async function recordSection(browser, kind, groups) {
       units: group.units,
       cueCount: group.cues.length,
       skippedInvalidSequences: group.invalidSequenceEvents,
+      animationCoverage: group.animationCoverage,
     })),
     expectedCueCount: groups.reduce((total, group) => total + group.cues.length, 0),
     visualLayouts,
@@ -805,7 +1027,7 @@ async function recordSection(browser, kind, groups) {
       const groupStartedAt = Date.now();
       await showUnit(page, groups, groupIndex);
       for (const [cueIndex, cue] of group.cues.entries()) {
-        await showCue(page, group, cue, cueIndex, segmentCueIndex, segment.expectedCueCount);
+        const eventPlacement = await showCue(page, group, cue, cueIndex, segmentCueIndex, segment.expectedCueCount);
         await page.waitForTimeout(CONFIG.audio.cueLeadSeconds * 1000);
         const startedAt = await playCue(page, cue);
         segment.audioCues.push({
@@ -821,6 +1043,10 @@ async function recordSection(browser, kind, groups) {
           translated: cue.translated,
           textLabel: cue.textLabel,
           animationEvent: cue.animation.event,
+          animationSequence: cue.animation.sequenceId,
+          animationReuseCount: cue.animation.reuseCount,
+          animationCandidateCount: cue.animation.candidateCount,
+          eventPlacement,
           duration: cue.durationSeconds,
           start: Math.max(0, (startedAt - segment.startedAt) / 1000),
         });

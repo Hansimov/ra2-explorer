@@ -19,17 +19,21 @@
     "outputDevice": "CABLE Input (VB-Audio Virtual Cable)",
     "captureDevice": "CABLE Output (VB-Audio Virtual Cable)",
     "cueLeadSeconds": 0.24,
-    "cueGapSeconds": 0.12,
+    "cueGapSeconds": 0.26,
     "presentationDelaySeconds": 0.2
   },
   "visual": {
     "playerColor": "red",
     "subjectSpan": 576,
     "subjectHeaderOverlap": 380,
+    "eventCollisionMargin": 14,
+    "eventCollisionTileSize": 8,
     "previewAngle": 1,
     "frameIntervalMs": 110,
     "voxelFacingIntervalMs": 520,
-    "unitIntroSeconds": 0.45,
+    "unitIntroSeconds": 1.15,
+    "unitFadeSeconds": 0.38,
+    "unitSlideSeconds": 0.56,
     "sectionIntroSeconds": 3.0,
     "sectionOutroSeconds": 0.55
   }
