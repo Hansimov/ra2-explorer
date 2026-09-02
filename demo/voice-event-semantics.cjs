@@ -98,7 +98,6 @@ function chooseCueEvent(cue, unitId = "") {
 }
 
 function eventLabel(event) {
-  if (event?.slot === "feedback" && /fear/i.test(event.event || "")) return "受惊";
   return SLOT_LABELS[event?.slot] || "单位回应";
 }
 
