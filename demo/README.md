@@ -76,7 +76,7 @@ npm run audio:verify
 npm run voices:record -- http://127.0.0.1:46120/ infantry
 ```
 
-`all` 作为兼容参数同样只录本期的步兵内容。开发时可追加 `--smoke`，仅取第一个单位的前两条声音：
+`all` 作为兼容参数同样只录本期的步兵内容。开发时可追加 `--smoke`，仅取前两个单位的第一条声音，以同时检查轮播的相邻项：
 
 ```bat
 npm run voices:record -- http://127.0.0.1:46120/ infantry --smoke

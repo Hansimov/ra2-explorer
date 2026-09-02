@@ -21,16 +21,16 @@ const SOURCE_WIDTH = CONFIG.output.width;
 const SOURCE_HEIGHT = CONFIG.output.height;
 const FPS = CONFIG.output.frameRate;
 const EVENT_LABELS = {
-  select: "选择回应",
-  create: "出场回应",
-  move: "移动指令",
-  attack: "攻击指令",
-  feedback: "受击反馈",
-  special_attack: "特殊指令",
-  enter: "进入指令",
-  capture: "占领指令",
-  deploy: "部署指令",
-  harvest: "采集指令",
+  select: "选择",
+  create: "出场",
+  move: "移动",
+  attack: "攻击",
+  feedback: "受击",
+  special_attack: "特殊攻击",
+  enter: "进入",
+  capture: "占领",
+  deploy: "部署",
+  harvest: "采集",
   die: "阵亡",
 };
 const SECTION_LABELS = { infantry: "苏军步兵单位语音" };
@@ -120,23 +120,18 @@ function sequenceCandidatesForSlot(visual, slot) {
     feedback: [/down|crawl|up|tumble|panic/i, /walk|idle1|idle2|ready|guard/i],
     die: [/die1|die2|airdeathstart|airdeathfinish|death|tumble/i, /down|crawl|idle1/i],
   };
-  const ordered = [];
-  const seen = new Set();
   for (const expression of preferences[slot] || preferences.select) {
+    const matched = [];
+    const seen = new Set();
     for (const sequence of sequences.filter((candidate) => sequenceMatches(candidate, expression))) {
       const key = sequenceKey(sequence);
       if (seen.has(key)) continue;
       seen.add(key);
-      ordered.push(sequence);
+      matched.push(sequence);
     }
+    if (matched.length) return matched;
   }
-  for (const sequence of sequences) {
-    const key = sequenceKey(sequence);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    ordered.push(sequence);
-  }
-  return ordered;
+  return sequences.slice(0, 1);
 }
 
 function sequenceAnimation(group, slot, sourceId, ordinal) {
@@ -261,13 +256,13 @@ function presentationHtml() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
-    .shell{display:grid;grid-template-rows:220px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:34px 24px 16px;overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:center;gap:14px;width:100%}.unit-peek,.unit-current{display:grid;align-content:center;justify-items:center;min-width:0;height:132px;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.25;transform:scale(.8);color:#a7adb7}.unit-peek strong{max-width:100%;overflow:hidden;font-size:25px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-peek span{margin-bottom:8px;color:#717984;font-size:21px}.unit-current{position:relative;padding:16px 18px}.unit-current strong{max-width:100%;overflow:hidden;color:#f7f8fa;font-size:44px;line-height:1.1;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 30px rgba(0,0,0,.46)}
-    .content{display:grid;grid-template-rows:minmax(0,1.18fr) minmax(470px,.72fr);min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 48%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;inset:22px 38px 8px;display:grid;place-items:center}.subject{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transform:scale(1.46);transform-origin:center;transition:opacity .2s ease}.cameo{position:absolute;right:24px;top:16px;width:148px;height:116px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 24px rgba(0,0,0,.55));transition:opacity .2s ease}
-    .voice{display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;padding:22px 42px 20px;transition:opacity .2s ease}.voice-head{display:flex;align-items:center;justify-content:center;min-height:48px}.event{display:inline-flex;align-items:center;gap:13px;color:#ed6c66;font-size:22px;font-weight:700;letter-spacing:.04em}.event i{width:8px;height:8px;border-radius:50%;background:#ed5b55;box-shadow:0 0 20px rgba(237,91,85,.8)}.transcript{display:grid;align-content:center;justify-items:center;gap:28px;min-height:0;padding:18px 4px}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;max-width:930px;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{color:#f7f8fa;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:45px;font-weight:650;line-height:1.34;letter-spacing:.002em}.localized{color:#cdd2da;font-size:38px;font-weight:560;line-height:1.46}.text-block.hidden{display:none}
+    .shell{display:grid;grid-template-rows:250px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:18px 24px 10px;overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:218px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.24;transform:scale(.82);color:#a7adb7}.unit-peek img{width:82px;height:65px;margin-bottom:12px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:25px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{width:142px;height:112px;margin-bottom:14px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current strong{max-width:100%;overflow:hidden;color:#ef625c;font-size:50px;line-height:1.08;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
+    .content{display:grid;grid-template-rows:minmax(0,1fr) 570px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 56%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;inset:8px 38px 0;display:grid;place-items:center}.subject{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transform:translateY(30px) scale(1.46);transform-origin:center;transition:opacity .2s ease}
+    .voice{display:grid;grid-template-rows:24px minmax(0,1fr);overflow:hidden;padding:0 42px 18px;transition:opacity .2s ease}.voice-head{display:flex;align-items:center;justify-content:center;min-height:24px}.event{display:inline-flex;align-items:center;color:#bd7773;font-size:17px;font-weight:650;letter-spacing:.05em}.event i{display:none}.transcript{display:grid;align-content:start;justify-items:center;gap:25px;min-height:0;padding:32px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;max-width:950px;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{color:#f7f8fa;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:52px;font-weight:660;line-height:1.3;letter-spacing:.002em}.localized{color:#d5d9df;font-size:44px;font-weight:580;line-height:1.42}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
     .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:900px;padding:56px 44px;text-align:center}.transition-card small{display:block;color:#e96a64;font-size:23px;font-weight:700;letter-spacing:.08em}.transition-card small:empty{display:none}.transition-card h2{margin:28px 0 0;font-size:62px;line-height:1.22;text-shadow:0 14px 42px rgba(0,0,0,.48)}.transition-card p{display:none}.transition-card .site{margin-top:42px;color:#858e9a;font-family:"Segoe UI",sans-serif;font-size:22px}
-    .changing .unit-track,.changing .subject,.changing .cameo,.changing .voice{opacity:0}.unit-track{transition:opacity .2s ease}
-  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><span>‹</span><strong></strong></div><div class="unit-current"><strong></strong></div><div class="unit-peek next"><span>›</span><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><img class="subject" alt="单位动画"></div><img class="cameo" alt="单位图标"></section><section class="panel voice"><div class="voice-head"><span class="event"><i></i><b></b></span></div><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
+    .changing .unit-track,.changing .subject,.changing .voice{opacity:0}.unit-track{transition:opacity .2s ease}
+  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt="上一个单位头像"><strong></strong></div><div class="unit-current"><img alt="当前单位头像"><strong></strong></div><div class="unit-peek next"><img alt="下一个单位头像"><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><img class="subject" alt="单位动画"></div></section><section class="panel voice"><div class="voice-head"><span class="event"><i></i><b></b></span></div><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
     window.__voiceTimer=0;window.__setFrames=(frames,interval)=>{clearInterval(window.__voiceTimer);const image=document.querySelector('.subject');let index=0;const apply=()=>{image.src=frames[index]||''};apply();if(frames.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%frames.length;apply()},Math.max(70,interval||110))};
   </script></body></html>`;
 }
@@ -335,17 +330,19 @@ async function showUnit(page, groups, groupIndex) {
   await page.evaluate(() => document.body.classList.add("changing"));
   await page.waitForTimeout(210);
   const group = groups[groupIndex];
-  const previous = groups[groupIndex - 1]?.representative.name || "";
-  const next = groups[groupIndex + 1]?.representative.name || "";
+  const previousGroup = groups[groupIndex - 1];
+  const nextGroup = groups[groupIndex + 1];
+  const previous = previousGroup ? { name: previousGroup.representative.name, cameoUrl: previousGroup.cameoUrl } : null;
+  const next = nextGroup ? { name: nextGroup.representative.name, cameoUrl: nextGroup.cameoUrl } : null;
   await page.evaluate(({ group, previous, next }) => {
-    document.querySelector(".previous strong").textContent = previous;
-    document.querySelector(".next strong").textContent = next;
+    document.querySelector(".previous strong").textContent = previous?.name || "";
+    document.querySelector(".previous img").src = previous?.cameoUrl || "";
+    document.querySelector(".next strong").textContent = next?.name || "";
+    document.querySelector(".next img").src = next?.cameoUrl || "";
     document.querySelector(".previous").style.visibility = previous ? "visible" : "hidden";
     document.querySelector(".next").style.visibility = next ? "visible" : "hidden";
     document.querySelector(".unit-current strong").textContent = group.representative.name;
-    const cameo = document.querySelector(".cameo");
-    cameo.src = group.cameoUrl || "";
-    cameo.style.display = group.cameoUrl ? "block" : "none";
+    document.querySelector(".unit-current img").src = group.cameoUrl || "";
     const animation = group.cues[0]?.animation || { frames: [], intervalMs: 110 };
     window.__setFrames(animation.frames, animation.intervalMs);
     document.querySelector(".event b").textContent = "";
@@ -680,7 +677,7 @@ async function main() {
   const kinds = ["infantry"];
   const selectedGroups = Object.fromEntries(kinds.map((kind) => {
     const groups = prepareGroups(plan.groups.filter((group) => group.kind === kind), plan.source.id, cameoPaletteId);
-    return [kind, SMOKE ? groups.slice(0, 1).map((group) => ({ ...group, cues: group.cues.slice(0, 2) })) : groups];
+    return [kind, SMOKE ? groups.slice(0, 2).map((group) => ({ ...group, cues: group.cues.slice(0, 1) })) : groups];
   }));
   for (const kind of kinds) {
     if (!selectedGroups[kind].length) throw new Error(`${kind} 没有可录制的单位声音`);
