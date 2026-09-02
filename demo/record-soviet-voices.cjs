@@ -813,6 +813,7 @@ async function recordSection(browser, kind, groups) {
           unitId: group.representative.id,
           unitName: group.representative.name,
           slot: cue.slot,
+          weaponTier: cue.weaponTier,
           eventName: cue.eventName,
           eventLabel: cue.eventLabel,
           original: cue.original,

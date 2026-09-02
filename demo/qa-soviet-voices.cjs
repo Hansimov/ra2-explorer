@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { SLOT_ORDER, animationMatchesSlot } = require("./voice-event-semantics.cjs");
+const { SLOT_ORDER, animationMatchesSlot, terminalPunctuationKind } = require("./voice-event-semantics.cjs");
 
 const ROOT = path.resolve(__dirname);
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "voice-video.config.json"), "utf8"));
@@ -60,6 +60,7 @@ for (const segment of showcase.segments || []) {
   for (const group of segment.groups || []) {
     const groupCues = (segment.audioCues || []).filter((cue) => cue.unitId === group.id);
     const slotOrder = groupCues.map((cue) => SLOT_ORDER.get(cue.slot) ?? 50);
+    const weaponTiers = groupCues.filter((cue) => cue.slot === "weapon").map((cue) => cue.weaponTier);
     const layout = segment.visualLayouts?.[group.id];
     check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Math.abs(Number(layout?.displaySpan) - targetSpan) <= 1, layout);
     check(`${segment.id}/${group.id}: 主体锚点有效`, [layout?.anchorX, layout?.anchorY, layout?.scale].every(Number.isFinite), layout);
@@ -67,6 +68,9 @@ for (const segment of showcase.segments || []) {
     check(`${segment.id}/${group.id}: 透明主体画布可跨入顶部区域`, Number(layout?.headerOverlap) === Number(CONFIG.visual.subjectHeaderOverlap), layout);
     check(`${segment.id}/${group.id}: 完整源帧上沿不被画布裁切`, Number(layout?.sourceTopAtLowPosture) >= -1, layout);
     check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
+    check(`${segment.id}/${group.id}: 精英武器声音位于普通武器之后`, weaponTiers.every((tier, index) => (
+      index === 0 || weaponTiers[index - 1] !== "elite" || tier === "elite"
+    )), weaponTiers);
   }
   for (const cue of segment.audioCues || []) {
     const translation = cue.translated || cue.localized || "";
@@ -74,6 +78,12 @@ for (const segment of showcase.segments || []) {
     check(`${segment.id}/${cue.assetId}: 含可展示文本`, Boolean(cue.original || cue.translated || cue.localized), { original: cue.original, translated: cue.translated, localized: cue.localized });
     check(`${segment.id}/${cue.assetId}: 原文或英文音效描述完整`, Boolean(cue.original), cue.original);
     check(`${segment.id}/${cue.assetId}: 含中文译文或原生中文`, Boolean(cue.translated || cue.localized), { translated: cue.translated, localized: cue.localized });
+    if (cue.translated) {
+      check(`${segment.id}/${cue.assetId}: 译文句末标点与原文一致`, terminalPunctuationKind(cue.original) === terminalPunctuationKind(cue.translated), {
+        original: cue.original,
+        translated: cue.translated,
+      });
+    }
     if (!cue.original) {
       check(`${segment.id}/${cue.assetId}: 无原文音效保留尖括号`, /^<[^<>]+>$/.test(translation), translation);
     } else if (originalHasCue) {

@@ -110,6 +110,39 @@ function soundDescription(eventName, slot) {
   return { original: "", translated: "" };
 }
 
+function terminalPunctuationKind(text) {
+  const value = String(text || "").trim();
+  if (!value || /^<[^<>]+>$/.test(value)) return "";
+  const punctuation = value.match(/(?:\.{2,}|…+|[.!?,;:。！？；：，]+)$/u)?.[0] || "";
+  if (!punctuation) return "";
+  if (/[?？]/u.test(punctuation) && /[!！]/u.test(punctuation)) return "question_exclamation";
+  if (/[?？]/u.test(punctuation)) return "question";
+  if (/[!！]/u.test(punctuation)) return "exclamation";
+  if (/(?:\.{2,}|…)/u.test(punctuation)) return "ellipsis";
+  if (/[;；]/u.test(punctuation)) return "semicolon";
+  if (/[:：]/u.test(punctuation)) return "colon";
+  if (/[,，]/u.test(punctuation)) return "comma";
+  return "period";
+}
+
+function alignTranslationPunctuation(original, translation) {
+  const value = String(translation || "").trim();
+  if (!value) return "";
+  if (/^<[^<>]+>$/.test(String(original || "").trim()) && /^<[^<>]+>$/.test(value)) return value;
+  const punctuation = {
+    question_exclamation: "？！",
+    question: "？",
+    exclamation: "！",
+    ellipsis: "……",
+    semicolon: "；",
+    colon: "：",
+    comma: "，",
+    period: "。",
+  }[terminalPunctuationKind(original)] || "";
+  const content = value.replace(/(?:\.{2,}|…+|[.!?,;:。！？；：，]+)$/u, "").trimEnd();
+  return `${content}${punctuation}`;
+}
+
 function animationMatchesSlot(slot, animationEvent) {
   const patterns = {
     create: /cheer|idle|ready|guard/i,
@@ -135,5 +168,7 @@ module.exports = {
   chooseCueEvent,
   eventLabel,
   inferredSlotFromAssetName,
+  alignTranslationPunctuation,
   soundDescription,
+  terminalPunctuationKind,
 };
