@@ -57,13 +57,15 @@ function mediaUrl(assetId) {
   return `${BASE_URL}/api/assets/${encodeURIComponent(assetId)}/media`;
 }
 
-function assetPreviewUrl(assetId, frame, shadowFrame, scale = 12, paletteKind = "unit") {
+function assetPreviewUrl(assetId, frame, shadowFrame, scale = 12, options = {}) {
+  const { paletteKind = "unit", paletteId = "", playerColor = CONFIG.visual.playerColor } = options;
   const params = new URLSearchParams({
     frame: String(frame),
     scale: String(scale),
-    player_color: CONFIG.visual.playerColor,
-    palette_kind: paletteKind,
   });
+  if (playerColor) params.set("player_color", playerColor);
+  if (paletteKind) params.set("palette_kind", paletteKind);
+  if (paletteId) params.set("palette_id", paletteId);
   if (Number.isInteger(shadowFrame)) params.set("shadow_frame", String(shadowFrame));
   return `${BASE_URL}/api/assets/${encodeURIComponent(assetId)}/preview.png?${params}`;
 }
@@ -168,7 +170,7 @@ function sequenceAnimation(group, slot, sourceId, ordinal) {
     const shadowFrame = pairedShadow && frame < shadowOffset && frame + shadowOffset < visual.sourceFrameCount
       ? frame + shadowOffset
       : undefined;
-    return assetPreviewUrl(sequence.assetId, frame, shadowFrame, 12, sequence.palette || "unit");
+    return assetPreviewUrl(sequence.assetId, frame, shadowFrame, 12, { paletteKind: sequence.palette || "unit" });
   });
   return {
     event: sequence.event,
@@ -177,7 +179,7 @@ function sequenceAnimation(group, slot, sourceId, ordinal) {
   };
 }
 
-function prepareGroups(groups, sourceId) {
+function prepareGroups(groups, sourceId, cameoPaletteId) {
   return groups.map((group) => {
     const invalidSequenceEvents = (group.representative.visual.sequences || [])
       .filter((sequence) => !validSequence(group.representative.visual, sequence))
@@ -202,12 +204,24 @@ function prepareGroups(groups, sourceId) {
     return {
       ...group,
       cameoUrl: group.representative.visual.cameoAssetId
-        ? assetPreviewUrl(group.representative.visual.cameoAssetId, 0, undefined, 6, "unit")
+        ? assetPreviewUrl(group.representative.visual.cameoAssetId, 0, undefined, 6, {
+          paletteKind: "",
+          paletteId: cameoPaletteId,
+          playerColor: "",
+        })
         : entityPreviewUrl(sourceId, group.representative.id, 5, 5),
       invalidSequenceEvents,
       cues,
     };
   });
+}
+
+async function findCameoPaletteId(sourceId) {
+  const params = new URLSearchParams({ source_id: sourceId, q: "CAMEO.PAL", limit: "20" });
+  const response = await fetch(`${BASE_URL}/api/assets?${params}`);
+  if (!response.ok) throw new Error(`CAMEO.PAL 查询失败：${response.status}`);
+  const page = await response.json();
+  return page.items.find((asset) => asset.source_id === sourceId && asset.display_name.toLowerCase() === "cameo.pal")?.id || "";
 }
 
 async function mapLimit(values, limit, operation) {
@@ -248,7 +262,7 @@ function presentationHtml() {
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
     .shell{display:grid;grid-template-rows:238px minmax(0,1fr) 72px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:38px 34px 28px;border-bottom:1px solid #30343a;background:rgba(13,15,18,.94);overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.48fr) minmax(0,1fr);align-items:center;gap:20px;width:100%}.unit-peek,.unit-current{display:grid;align-content:center;justify-items:center;min-width:0;height:144px;border-radius:12px;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.3;transform:scale(.82);color:#a7adb7}.unit-peek strong{max-width:100%;overflow:hidden;font-size:25px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}.unit-peek span{margin-bottom:10px;color:#717984;font-size:18px}.unit-current{position:relative;padding:21px 24px;border:1px solid rgba(224,75,69,.62);background:linear-gradient(145deg,rgba(125,35,32,.42),rgba(39,25,27,.5));box-shadow:0 22px 60px rgba(0,0,0,.28)}.unit-current strong{max-width:100%;overflow:hidden;font-size:41px;line-height:1.1;text-overflow:ellipsis;white-space:nowrap}.affiliation{margin-top:13px;padding:5px 13px;border:1px solid rgba(224,75,69,.48);border-radius:99px;background:rgba(127,37,33,.26);color:#f08a84;font-size:18px;font-weight:700}
-    .content{display:grid;grid-template-rows:minmax(0,1.12fr) minmax(500px,.78fr);gap:30px;min-height:0;padding:34px 46px 28px}.panel{min-height:0;border:1px solid #343941;border-radius:14px;background:rgba(21,24,29,.9);box-shadow:0 28px 80px rgba(0,0,0,.28)}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 47%,rgba(132,43,39,.27),rgba(22,25,30,.34) 42%,rgba(9,11,14,.76) 79%)}.visual:before{position:absolute;inset:0;content:"";opacity:.15;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.025) 5px);pointer-events:none}.stage-frame{position:absolute;inset:45px 55px 38px;display:grid;place-items:center}.subject{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 27px 24px rgba(0,0,0,.58));transition:opacity .2s ease}.cameo{position:absolute;right:32px;top:30px;width:154px;height:122px;padding:10px;border:1px solid #4a5059;border-radius:8px;background:#101318;object-fit:contain;image-rendering:pixelated;box-shadow:0 15px 38px rgba(0,0,0,.44);transition:opacity .2s ease}
+    .content{display:grid;grid-template-rows:minmax(0,1.12fr) minmax(500px,.78fr);gap:30px;min-height:0;padding:34px 46px 28px}.panel{min-height:0;border:1px solid #343941;border-radius:14px;background:rgba(21,24,29,.9);box-shadow:0 28px 80px rgba(0,0,0,.28)}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 47%,rgba(132,43,39,.27),rgba(22,25,30,.34) 42%,rgba(9,11,14,.76) 79%)}.visual:before{position:absolute;inset:0;content:"";opacity:.15;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.025) 5px);pointer-events:none}.stage-frame{position:absolute;inset:45px 55px 38px;display:grid;place-items:center}.subject{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 27px 24px rgba(0,0,0,.58));transform:scale(1.42);transform-origin:center;transition:opacity .2s ease}.cameo{position:absolute;right:32px;top:30px;width:154px;height:122px;padding:10px;border:1px solid #4a5059;border-radius:8px;background:#101318;object-fit:contain;image-rendering:pixelated;box-shadow:0 15px 38px rgba(0,0,0,.44);transition:opacity .2s ease}
     .voice{display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden;padding:35px 42px 38px;transition:opacity .2s ease}.voice-head{display:flex;align-items:center;min-height:54px}.event{display:inline-flex;align-items:center;gap:13px;padding:9px 16px;border:1px solid rgba(224,75,69,.48);border-radius:7px;background:rgba(118,35,32,.25);color:#f37a74;font-size:22px;font-weight:700}.event i{width:9px;height:9px;border-radius:50%;background:#ed5b55;box-shadow:0 0 0 7px rgba(237,91,85,.1)}.transcript{display:grid;align-content:center;gap:30px;min-height:0;padding:26px 2px 4px}.text-block{display:grid;grid-template-columns:82px minmax(0,1fr);align-items:start;gap:22px}.text-label{display:grid;place-items:center;min-height:38px;margin-top:6px;border:1px solid #414750;border-radius:6px;background:#171a1f;color:#9da5af;font-size:17px;font-weight:700}.original,.localized{margin:0;overflow-wrap:anywhere;text-wrap:balance}.original{color:#f7f8fa;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:43px;font-weight:650;line-height:1.32;letter-spacing:.002em}.localized{color:#d1d5db;font-size:36px;font-weight:560;line-height:1.44}.localized-block{padding-top:27px;border-top:1px solid #373c44}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
     .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 40%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:850px;padding:72px 68px;border:1px solid #3c4149;border-top:4px solid #df4d47;border-radius:10px;background:rgba(20,23,28,.97);box-shadow:0 38px 120px rgba(0,0,0,.56);text-align:center}.transition-card small{display:block;color:#e96a64;font-size:22px;font-weight:700;letter-spacing:.08em}.transition-card small:empty{display:none}.transition-card h2{margin:28px 0 22px;font-size:57px;line-height:1.22}.transition-card p{margin:0;color:#b4bbc5;font-size:29px;line-height:1.62}.transition-card .site{margin-top:42px;color:#858e9a;font-family:"Segoe UI",sans-serif;font-size:21px}
@@ -664,9 +678,11 @@ async function recordSection(browser, kind, groups) {
 async function main() {
   if (!["all", "infantry"].includes(KIND_FILTER)) throw new Error(`本期仅录制苏军步兵，未知分类：${KIND_FILTER}`);
   const plan = runPlanner();
+  const cameoPaletteId = await findCameoPaletteId(plan.source.id);
+  if (!cameoPaletteId) throw new Error("没有找到当前资料库的 CAMEO.PAL");
   const kinds = ["infantry"];
   const selectedGroups = Object.fromEntries(kinds.map((kind) => {
-    const groups = prepareGroups(plan.groups.filter((group) => group.kind === kind), plan.source.id);
+    const groups = prepareGroups(plan.groups.filter((group) => group.kind === kind), plan.source.id, cameoPaletteId);
     return [kind, SMOKE ? groups.slice(0, 1).map((group) => ({ ...group, cues: group.cues.slice(0, 2) })) : groups];
   }));
   for (const kind of kinds) {

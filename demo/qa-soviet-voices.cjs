@@ -66,8 +66,10 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: 原始画面为 30 fps`, video?.r_frame_rate === "30/1", video?.r_frame_rate);
   check(`${segment.id}: 帧时钟与媒体时长一致`, Math.abs(duration - Number(segment.capture?.duration || 0)) < 0.08, { media: duration, frameClock: segment.capture?.duration });
 }
-check("覆盖 9 个苏军步兵组", groupCount === 9, groupCount);
-check("覆盖 168 条单位声音", cueCount === 168, cueCount);
+const expectedGroups = showcase.smoke ? 1 : 9;
+const expectedCues = showcase.smoke ? 2 : 168;
+check(`覆盖 ${expectedGroups} 个苏军步兵组`, groupCount === expectedGroups, groupCount);
+check(`覆盖 ${expectedCues} 条单位声音`, cueCount === expectedCues, cueCount);
 
 const finalProbe = probe(FINAL_VIDEO, true);
 const finalVideo = finalProbe.streams.find((stream) => stream.codec_type === "video");
