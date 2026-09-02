@@ -211,6 +211,21 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
   });
 }
 
+function validateDescriptionMarkers(groups) {
+  for (const group of groups) {
+    for (const cue of group.cues) {
+      const translation = cue.translated || cue.localized || "";
+      const originalHasCue = /<[^<>]+>/.test(cue.original || "");
+      if (!cue.original && !/^<[^<>]+>$/.test(translation)) {
+        throw new Error(`${cue.assetName} 的无原文音效没有保留尖括号：${translation}`);
+      }
+      if (originalHasCue && !/<[^<>]+>/.test(translation)) {
+        throw new Error(`${cue.assetName} 的译文没有保留原文提示尖括号：${translation}`);
+      }
+    }
+  }
+}
+
 async function findCameoPaletteId(sourceId) {
   const params = new URLSearchParams({ source_id: sourceId, q: "CAMEO.PAL", limit: "20" });
   const response = await fetch(`${BASE_URL}/api/assets?${params}`);
@@ -680,6 +695,7 @@ async function main() {
   const kinds = ["infantry"];
   const selectedGroups = Object.fromEntries(kinds.map((kind) => {
     const groups = prepareGroups(plan.groups.filter((group) => group.kind === kind), plan.source.id, cameoPaletteId);
+    validateDescriptionMarkers(groups);
     return [kind, SMOKE ? groups.slice(0, 2).map((group) => ({ ...group, cues: group.cues.slice(0, 1) })) : groups];
   }));
   for (const kind of kinds) {

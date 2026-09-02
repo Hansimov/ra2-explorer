@@ -54,8 +54,15 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: CABLE 延迟在合理范围`, Number(segment.cableCaptureLatency) >= 0 && Number(segment.cableCaptureLatency) < 1.5, segment.cableCaptureLatency);
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
   for (const cue of segment.audioCues || []) {
+    const translation = cue.translated || cue.localized || "";
+    const originalHasCue = /<[^<>]+>/.test(cue.original || "");
     check(`${segment.id}/${cue.assetId}: 含可展示文本`, Boolean(cue.original || cue.translated || cue.localized), { original: cue.original, translated: cue.translated, localized: cue.localized });
     check(`${segment.id}/${cue.assetId}: 含中文译文或原生中文`, Boolean(cue.translated || cue.localized), { translated: cue.translated, localized: cue.localized });
+    if (!cue.original) {
+      check(`${segment.id}/${cue.assetId}: 无原文音效保留尖括号`, /^<[^<>]+>$/.test(translation), translation);
+    } else if (originalHasCue) {
+      check(`${segment.id}/${cue.assetId}: 译文保留原文提示尖括号`, /<[^<>]+>/.test(translation), { original: cue.original, translation });
+    }
     check(`${segment.id}/${cue.assetId}: 时长有效`, Number(cue.duration) > 0, cue.duration);
   }
   const rawPath = path.join(RUN_DIR, segment.rawVideo);

@@ -55,9 +55,8 @@ function compactText(value) {
 function displayText(value) {
   const text = compactText(value);
   if (!text) return "";
-  return text
-    .replace(/^\*+|\*+$/g, "")
-    .trim();
+  const asteriskCue = text.match(/^\*+\s*(.*?)\s*\*+$/);
+  return asteriskCue ? `<${asteriskCue[1]}>` : text;
 }
 
 function preserveDescriptionMarkers(original, translation) {
