@@ -54,9 +54,15 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: CABLE 输出路由生效`, segment.cableRouting?.sinkIdApplied === true && /CABLE Input/i.test(segment.cableRouting?.outputLabel || ""), segment.cableRouting);
   check(`${segment.id}: CABLE 延迟在合理范围`, Number(segment.cableCaptureLatency) >= 0 && Number(segment.cableCaptureLatency) < 1.5, segment.cableCaptureLatency);
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
+  const ivanLayout = segment.visualLayouts?.IVAN;
+  check(`${segment.id}: 使用疯狂伊文主体尺度基准`, ivanLayout?.targetUnit === "IVAN" && ivanLayout?.basis === "height", ivanLayout);
   for (const group of segment.groups || []) {
     const groupCues = (segment.audioCues || []).filter((cue) => cue.unitId === group.id);
     const slotOrder = groupCues.map((cue) => SLOT_ORDER.get(cue.slot) ?? 50);
+    const layout = segment.visualLayouts?.[group.id];
+    check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Number(layout?.displaySpan) >= 635 && Number(layout?.displaySpan) <= 645, layout);
+    check(`${segment.id}/${group.id}: 主体锚点有效`, [layout?.anchorX, layout?.anchorY, layout?.scale].every(Number.isFinite), layout);
+    check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, group.id !== "DOG" || layout?.basis === "width", layout);
     check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
   }
   for (const cue of segment.audioCues || []) {

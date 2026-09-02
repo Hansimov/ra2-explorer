@@ -69,6 +69,12 @@ function entityPreviewUrl(sourceId, entityId, facing, scale = 8) {
   return `${BASE_URL}/api/entities/${encodeURIComponent(sourceId)}/${encodeURIComponent(entityId)}/preview.png?${params}`;
 }
 
+function subjectLayerUrl(previewUrl) {
+  const parsed = new URL(previewUrl);
+  parsed.searchParams.delete("shadow_frame");
+  return parsed.toString();
+}
+
 function sequenceNamed(sequence, names) {
   const accepted = new Set(names.map((name) => name.toLowerCase()));
   return [sequence.event, ...(sequence.aliases || [])]
@@ -324,7 +330,7 @@ function presentationHtml() {
     .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:38px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:88px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:32px;font-weight:600}
     .unit-track{transition:opacity .28s ease,transform .34s cubic-bezier(.22,.7,.22,1);will-change:opacity,transform}.unit-leaving .unit-track{opacity:0;transform:translateX(-82px) scale(.985)}.unit-entering .unit-track{opacity:0;transform:translateX(82px) scale(.985)}.unit-leaving .subject,.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .subject,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
   </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><canvas class="subject" width="1000" height="850" aria-label="单位动画"></canvas></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
-    window.__voiceTimer=0;window.__voiceFrames={};window.__voiceLayouts={};window.__setFrames=(frames,interval,posture,unitId)=>{clearInterval(window.__voiceTimer);const canvas=document.querySelector('.subject');const context=canvas.getContext('2d');context.imageSmoothingEnabled=false;const layout=window.__voiceLayouts[unitId]||{scale:1};const sequence=frames.map(src=>window.__voiceFrames[src]).filter(Boolean);const widest=Math.max(1,...sequence.map(frame=>frame.bounds.width));const tallest=Math.max(1,...sequence.map(frame=>frame.bounds.height));const scale=Math.min(layout.scale,900/widest,720/tallest);let index=0;const apply=()=>{context.clearRect(0,0,canvas.width,canvas.height);const frame=sequence[index];if(frame){const bounds=frame.bounds;const baseline=posture==='low'?700:742;const center=(bounds.left+bounds.right)/2;context.drawImage(frame.image,canvas.width/2-center*scale,baseline-bounds.bottom*scale,frame.image.naturalWidth*scale,frame.image.naturalHeight*scale)}};apply();if(sequence.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%sequence.length;apply()},Math.max(70,interval||110))};window.__fitOriginal=()=>{const text=document.querySelector('.original');const base=66;const limit=window.innerWidth*.8;text.style.fontSize=base+'px';const width=text.getBoundingClientRect().width;if(width>limit)text.style.fontSize=Math.max(28,base*limit/width)+'px'};
+    window.__voiceTimer=0;window.__voiceFrames={};window.__voiceLayouts={};window.__setFrames=(frames,interval,posture,unitId)=>{clearInterval(window.__voiceTimer);const canvas=document.querySelector('.subject');const context=canvas.getContext('2d');context.imageSmoothingEnabled=false;const layout=window.__voiceLayouts[unitId]||{scale:1,anchorX:0,anchorY:0,referenceWidth:1,referenceHeight:1};const sequence=frames.map(src=>window.__voiceFrames[src]).filter(Boolean);const scale=layout.scale;const baseline=posture==='low'?700:742;const drawLeft=canvas.width/2-layout.anchorX*scale;const drawTop=baseline-layout.anchorY*scale;const frameRect=canvas.getBoundingClientRect();const visualRect=document.querySelector('.visual').getBoundingClientRect();const voiceHead=document.querySelector('.voice-head');const bodyRight=canvas.width/2+layout.referenceWidth*scale/2;const bodyTop=baseline-layout.referenceHeight*scale*(posture==='low'?0.58:1);const eventLeft=frameRect.left-visualRect.left+bodyRight*frameRect.width/canvas.width+18;const eventTop=frameRect.top-visualRect.top+bodyTop*frameRect.height/canvas.height+24;voiceHead.style.left=Math.min(visualRect.width-150,Math.max(40,eventLeft))+'px';voiceHead.style.top=Math.min(visualRect.height-80,Math.max(100,eventTop))+'px';let index=0;const apply=()=>{context.clearRect(0,0,canvas.width,canvas.height);const frame=sequence[index];if(frame)context.drawImage(frame.image,drawLeft,drawTop,frame.image.naturalWidth*scale,frame.image.naturalHeight*scale)};apply();if(sequence.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%sequence.length;apply()},Math.max(70,interval||110))};window.__fitOriginal=()=>{const text=document.querySelector('.original');const base=66;const limit=window.innerWidth*.8;text.style.fontSize=base+'px';const width=text.getBoundingClientRect().width;if(width>limit)text.style.fontSize=Math.max(28,base*limit/width)+'px'};
   </script></body></html>`;
 }
 
@@ -339,16 +345,24 @@ async function installPresentation(page, kind, groups) {
     pagesUrl: CONFIG.pagesUrl,
   });
 
+  const frameGroups = groups.map((group) => ({
+    unitId: group.representative.id,
+    referenceFrames: [...new Set(group.cues
+      .filter((cue) => ["select", "move"].includes(cue.slot))
+      .flatMap((cue) => cue.animation.frames)
+      .map(subjectLayerUrl))],
+  }));
+  for (const group of frameGroups) {
+    if (!group.referenceFrames.length) {
+      group.referenceFrames = groups.find((candidate) => candidate.representative.id === group.unitId)
+        ?.cues[0]?.animation.frames.map(subjectLayerUrl) || [];
+    }
+  }
   const urls = [...new Set(groups.flatMap((group) => [
     group.cameoUrl,
     ...group.cues.flatMap((cue) => cue.animation.frames),
-  ]).filter(Boolean))];
-  const frameGroups = groups.map((group) => ({
-    unitId: group.representative.id,
-    referenceFrames: group.cues[0]?.animation.frames || [],
-  }));
-  const frameUrls = [...new Set(groups.flatMap((group) => group.cues.flatMap((cue) => cue.animation.frames)))];
-  const visualLayouts = await page.evaluate(async ({ values, frameGroups, frameUrls }) => {
+  ]).concat(frameGroups.flatMap((group) => group.referenceFrames)).filter(Boolean))];
+  const visualLayouts = await page.evaluate(async ({ values, frameGroups }) => {
     const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
       const image = new Image();
@@ -398,30 +412,45 @@ async function installPresentation(page, kind, groups) {
       const sorted = [...values].sort((left, right) => left - right);
       return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 1;
     };
-    for (const src of frameUrls) boundsFor(src);
-    const layouts = {};
-    for (const group of frameGroups) {
-      const selected = [
-        group.referenceFrames[0],
-        group.referenceFrames[Math.floor(group.referenceFrames.length / 2)],
-        group.referenceFrames.at(-1),
-      ].filter(Boolean);
-      const references = [...new Set(selected)]
+    const quantile = (values, ratio) => {
+      const sorted = [...values].sort((left, right) => left - right);
+      return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio))] : 1;
+    };
+    const samples = frameGroups.map((group) => {
+      const references = [...new Set(group.referenceFrames)]
         .map((src) => ({ src, bounds: boundsFor(src) }))
         .filter((sample) => sample.bounds);
-      const referenceHeight = median(references.map((sample) => sample.bounds.height));
-      layouts[group.unitId] = {
-        scale: Math.min(3.4, 640 / referenceHeight),
+      return {
+        unitId: group.unitId,
+        references,
+        referenceHeight: quantile(references.map((sample) => sample.bounds.height), 0.7),
+        referenceWidth: quantile(references.map((sample) => sample.bounds.width), 0.7),
         anchorX: median(references.map((sample) => (sample.bounds.left + sample.bounds.right) / 2)),
         anchorY: median(references.map((sample) => sample.bounds.bottom)),
-        referenceHeight,
+      };
+    });
+    const ivan = samples.find((sample) => sample.unitId === "IVAN");
+    const targetSpan = 640;
+    const layouts = {};
+    for (const sample of samples) {
+      const dimension = sample.unitId === "DOG" ? sample.referenceWidth : sample.referenceHeight;
+      const scale = Math.min(4.2, Math.max(1.8, targetSpan / Math.max(1, dimension)));
+      layouts[sample.unitId] = {
+        scale,
+        anchorX: sample.anchorX,
+        anchorY: sample.anchorY,
+        referenceHeight: sample.referenceHeight,
+        referenceWidth: sample.referenceWidth,
+        displaySpan: dimension * scale,
+        basis: sample.unitId === "DOG" ? "width" : "height",
+        targetUnit: ivan?.unitId || "IVAN",
       };
     }
     window.__voiceFrames = records;
     window.__voiceLayouts = layouts;
     return layouts;
-  }, { values: urls, frameGroups, frameUrls });
-  console.log(`[visual] 单位归一化 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x`).join(" ")}`);
+  }, { values: urls, frameGroups });
+  console.log(`[visual] 以疯狂伊文为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
   const audioAssets = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
     cue.assetId,
     mediaUrl(cue.assetId),
@@ -442,6 +471,7 @@ async function installPresentation(page, kind, groups) {
     await Promise.all(Array.from({ length: Math.min(8, assets.length) }, worker));
     window.__voiceMediaUrls = objectUrls;
   }, audioAssets);
+  return visualLayouts;
 }
 
 async function showTransition(page, eyebrow, title, detail, durationSeconds) {
@@ -714,7 +744,7 @@ async function recordSection(browser, kind, groups) {
     if (failure?.errorText !== "net::ERR_ABORTED") failedRequests.push({ url: request.url(), error: failure?.errorText || "failed" });
   });
   await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await installPresentation(page, kind, groups);
+  const visualLayouts = await installPresentation(page, kind, groups);
   const routing = await prepareCableAudio(page);
   const rawTarget = path.join(RAW_DIR, `${kind}.mkv`);
   const audioTarget = path.join(AUDIO_DIR, `${kind}-cable.wav`);
@@ -730,6 +760,7 @@ async function recordSection(browser, kind, groups) {
       skippedInvalidSequences: group.invalidSequenceEvents,
     })),
     expectedCueCount: groups.reduce((total, group) => total + group.cues.length, 0),
+    visualLayouts,
     groupChapters: [],
     audioCues: [],
     errors,
