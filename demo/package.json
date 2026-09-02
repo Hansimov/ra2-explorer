@@ -7,6 +7,7 @@
     "audio:inspect": "node inspect-audio-devices.cjs",
     "audio:verify": "node verify-cable-route.cjs",
     "record": "node record-showcase.cjs",
+    "voices:plan": "node plan-soviet-voices.cjs",
     "assemble": "node assemble-showcase.cjs",
     "render": "node render-showcase.cjs",
     "qa": "node qa-showcase.cjs"
