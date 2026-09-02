@@ -26,9 +26,11 @@ from ra2_explorer import __version__
 from ra2_explorer.api import (
     Services,
     _alpha_composite_centered,
+    _composite_building_voxel_turret,
     _composite_focus_bounds,
     _crop_transparent_preview,
     _default_entity_operation_samples,
+    _entity_thumbnail_padding,
     _render_entity_shp_layer,
     _select_palette,
     create_app,
@@ -37,8 +39,9 @@ from ra2_explorer.codecs.shp import parse_shp
 from ra2_explorer.config import Settings
 from ra2_explorer.errors import Ra2ExplorerError
 
-PAGES_SNAPSHOT_SCHEMA_VERSION = 1
-PAGES_RENDER_REVISION = 4
+PAGES_SNAPSHOT_SCHEMA_VERSION = 2
+PAGES_RENDER_REVISION = 9
+PAGES_ASSET_BUNDLE_REVISION = 4
 _SAFE_FILENAME = re.compile(r"^[A-Za-z0-9_.~$-]+$")
 _AUDIO_FORMATS = {"aud", "bag_audio", "wav"}
 _MODEL_FORMATS = {"hva", "vxl"}
@@ -46,6 +49,9 @@ _IMAGE_FORMATS = {"pcx", "shp", "tmp"}
 _ENTITY_ATLAS_CELL_WIDTH = 144
 _ENTITY_ATLAS_CELL_HEIGHT = 135
 _ENTITY_ATLAS_COLUMNS = 12
+_ENTITY_SEARCH_ATLAS_CELL_SIZE = 36
+_ENTITY_SEARCH_ATLAS_CONTENT_SIZE = 32
+_ENTITY_SEARCH_ATLAS_COLUMNS = 24
 _T = TypeVar("_T")
 
 
@@ -57,6 +63,7 @@ class _AnimationVariant:
     facing_step: int
     frame_step: int
     shadow: bool
+    reverse: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,6 +358,7 @@ def _asset_usages(
                         facing_step=int(playback.get("facing_step") or 0),
                         frame_step=max(1, int(playback.get("frame_step") or 1)),
                         shadow=bool(playback.get("shadow")),
+                        reverse=bool(playback.get("reverse")),
                     )
                 )
     usages = {
@@ -378,8 +386,9 @@ def _export_asset_bundles(
         output = root / "assets" / f"{safe_id}.json"
         if output.is_file():
             bundle = json.loads(output.read_text(encoding="utf-8"))
-            metadata[asset_id] = bundle["metadata"]
-            return
+            if bundle.get("bundle_revision") == PAGES_ASSET_BUNDLE_REVISION:
+                metadata[asset_id] = bundle["metadata"]
+                return
         asset = _request_json(client, f"/api/assets/{quote(asset_id, safe='')}")
         inspected = _request_json(client, f"/api/assets/{quote(asset_id, safe='')}/metadata")
         empty = {
@@ -401,7 +410,12 @@ def _export_asset_bundles(
             }
         _write_json(
             output,
-            {"asset": asset, "metadata": inspected, "associations": associations},
+            {
+                "bundle_revision": PAGES_ASSET_BUNDLE_REVISION,
+                "asset": asset,
+                "metadata": inspected,
+                "associations": associations,
+            },
         )
         metadata[asset_id] = inspected
 
@@ -559,6 +573,96 @@ def _entity_tasks(
     return list(images.values()), list(models.values())
 
 
+def _entity_operation_effect_tasks(
+    root: Path,
+    source_id: str,
+    entities: list[dict[str, Any]],
+    metadata: dict[str, dict[str, Any]],
+) -> list[_ExportTask]:
+    tasks: dict[Path, _ExportTask] = {}
+    for entity in entities:
+        if entity.get("kind") != "building" or not entity.get("renderable"):
+            continue
+        entity_id = str(entity["id"])
+        safe_entity_id = _safe_filename(entity_id)
+        preview = entity.get("preview") or {}
+        facings = range(8) if preview.get("supports_facing") else range(1)
+        player_color = _entity_player_color(entity)
+        for association in entity.get("media", []):
+            if association.get("kind") != "animation" or association.get("role") != "operation":
+                continue
+            for sample in association.get("samples", []):
+                asset = sample.get("asset")
+                if not asset or asset.get("format") != "shp":
+                    continue
+                asset_id = str(asset["id"])
+                safe_asset_id = _safe_filename(asset_id)
+                playback = sample.get("animation") or {}
+                palette = str(sample.get("palette") or "auto")
+                variant = _AnimationVariant(
+                    palette=palette,
+                    start_frame=int(playback.get("start_frame") or 0),
+                    frame_count=(
+                        int(playback["frame_count"])
+                        if playback.get("frame_count") is not None
+                        else None
+                    ),
+                    facing_step=int(playback.get("facing_step") or 0),
+                    frame_step=max(1, int(playback.get("frame_step") or 1)),
+                    shadow=bool(playback.get("shadow")),
+                    reverse=bool(playback.get("reverse")),
+                )
+                asset_metadata = metadata.get(asset_id, {})
+                frame_count = max(1, int(asset_metadata.get("frame_count") or 1))
+                paired_shadows = {
+                    int(frame["index"]): int(frame["paired_shadow_frame"])
+                    for frame in asset_metadata.get("frames", [])
+                    if frame.get("paired_shadow_frame") is not None
+                }
+                usage = _AssetUsage(asset=asset, variants=frozenset({variant}))
+                requests = _animation_frame_requests(usage, frame_count, paired_shadows)
+                for facing in facings:
+                    for _palette, effect_frame, shadow_frame in requests:
+                        effect_name = (
+                            f"{effect_frame}-shadow-"
+                            f"{shadow_frame if shadow_frame is not None else 'none'}.webp"
+                        )
+                        output = (
+                            root
+                            / "previews"
+                            / "entities"
+                            / safe_entity_id
+                            / "effects"
+                            / safe_asset_id
+                            / palette
+                            / str(facing)
+                            / effect_name
+                        )
+                        params: dict[str, object] = {
+                            "frame": 0,
+                            "facing": facing,
+                            "scale": 4,
+                            "effect_asset_id": asset_id,
+                            "effect_frame": effect_frame,
+                        }
+                        if player_color:
+                            params["player_color"] = player_color
+                        if shadow_frame is not None:
+                            params["effect_shadow_frame"] = shadow_frame
+                        if palette != "auto":
+                            params["effect_palette_kind"] = palette
+                        tasks[output] = _ExportTask(
+                            path=(
+                                f"/api/entities/{quote(source_id, safe='')}/"
+                                f"{quote(entity_id, safe='')}/preview.png"
+                            ),
+                            params=params,
+                            output=output,
+                            kind="image",
+                        )
+    return list(tasks.values())
+
+
 def _export_entity_previews(
     services: Services,
     source_id: str,
@@ -622,10 +726,22 @@ def _export_entity_previews(
                         shadow_layers,
                         main_layers,
                     )
+            image, focus_bounds = _composite_building_voxel_turret(
+                services,
+                source_id,
+                semantic_entity,
+                image,
+                focus_bounds,
+                palette=palette,
+                frame=request.frame,
+                facing=request.facing,
+                player_color=request.player_color,
+                scale=request.scale,
+            )
             if request.thumbnail:
                 image = _crop_transparent_preview(
                     image,
-                    padding_ratio=0.42 if semantic_entity.kind == "infantry" else 0.08,
+                    padding_ratio=_entity_thumbnail_padding(semantic_entity, compact=False),
                     focus_bounds=focus_bounds,
                 )
             _save_webp(image, request.output)
@@ -666,6 +782,38 @@ def _entity_thumbnail_atlas_cell(image: Image.Image, body_format: str | None) ->
     return cell
 
 
+def _entity_search_thumbnail_cell(image: Image.Image) -> Image.Image:
+    cell = Image.new(
+        "RGBA",
+        (_ENTITY_SEARCH_ATLAS_CELL_SIZE, _ENTITY_SEARCH_ATLAS_CELL_SIZE),
+        (0, 0, 0, 0),
+    )
+    rgba = image.convert("RGBA")
+    bounds = rgba.getchannel("A").getbbox()
+    if bounds is None:
+        return cell
+    content = rgba.crop(bounds)
+    scale = min(
+        _ENTITY_SEARCH_ATLAS_CONTENT_SIZE / content.width,
+        _ENTITY_SEARCH_ATLAS_CONTENT_SIZE / content.height,
+    )
+    fitted = content.resize(
+        (
+            max(1, round(content.width * scale)),
+            max(1, round(content.height * scale)),
+        ),
+        Image.Resampling.NEAREST,
+    )
+    cell.alpha_composite(
+        fitted,
+        (
+            (_ENTITY_SEARCH_ATLAS_CELL_SIZE - fitted.width) // 2,
+            (_ENTITY_SEARCH_ATLAS_CELL_SIZE - fitted.height) // 2,
+        ),
+    )
+    return cell
+
+
 def _export_entity_thumbnail_atlases(
     root: Path,
     entities: list[dict[str, Any]],
@@ -687,11 +835,7 @@ def _export_entity_thumbnail_atlases(
         for item in items:
             preview = item.get("preview") or {}
             facing_counts.append(
-                8
-                if kind == "infantry"
-                and preview.get("supports_facing")
-                and preview.get("format") != "vxl"
-                else 1
+                8 if preview.get("supports_facing") and preview.get("format") != "vxl" else 1
             )
         sheet_facing_count = max(facing_counts, default=1)
         sheet_pattern = (
@@ -706,6 +850,7 @@ def _export_entity_thumbnail_atlases(
                 "cell_width": _ENTITY_ATLAS_CELL_WIDTH,
                 "cell_height": _ENTITY_ATLAS_CELL_HEIGHT,
                 "facing_count": facing_count,
+                "content_bounds": [None] * facing_count,
             }
 
         for facing in range(sheet_facing_count):
@@ -736,6 +881,17 @@ def _export_entity_thumbnail_atlases(
                         image,
                         str(item.get("body_format") or item.get("preview", {}).get("format") or ""),
                     )
+                bounds = cell.getchannel("A").getbbox()
+                if bounds is None:
+                    bounds = (0, 0, _ENTITY_ATLAS_CELL_WIDTH, _ENTITY_ATLAS_CELL_HEIGHT)
+                content_bounds = metadata[str(item["id"])]["content_bounds"]
+                if isinstance(content_bounds, list):
+                    content_bounds[source_facing] = {
+                        "x": bounds[0],
+                        "y": bounds[1],
+                        "width": bounds[2] - bounds[0],
+                        "height": bounds[3] - bounds[1],
+                    }
                 atlas.alpha_composite(
                     cell,
                     (
@@ -747,15 +903,94 @@ def _export_entity_thumbnail_atlases(
     return metadata
 
 
+def _export_entity_search_thumbnail_atlases(
+    root: Path,
+    entities: list[dict[str, Any]],
+) -> dict[str, dict[str, object]]:
+    atlas_root = root / "previews" / "entity-search-atlases"
+    if atlas_root.is_dir():
+        shutil.rmtree(atlas_root)
+    items = sorted(
+        (entity for entity in entities if entity.get("renderable")),
+        key=lambda item: str(item["id"]).casefold(),
+    )
+    if not items:
+        return {}
+
+    columns = min(_ENTITY_SEARCH_ATLAS_COLUMNS, len(items))
+    rows = (len(items) + columns - 1) // columns
+    sheet_pattern = (
+        "previews/entity-search-atlases/"
+        f"{{facing}}-r{PAGES_RENDER_REVISION}.webp"
+    )
+    metadata = {
+        str(item["id"]): {
+            "path": sheet_pattern,
+            "index": index,
+            "columns": columns,
+            "cell_width": _ENTITY_SEARCH_ATLAS_CELL_SIZE,
+            "cell_height": _ENTITY_SEARCH_ATLAS_CELL_SIZE,
+            "facing_count": 8,
+        }
+        for index, item in enumerate(items)
+    }
+
+    for preview_angle in range(8):
+        atlas = Image.new(
+            "RGBA",
+            (
+                columns * _ENTITY_SEARCH_ATLAS_CELL_SIZE,
+                rows * _ENTITY_SEARCH_ATLAS_CELL_SIZE,
+            ),
+            (0, 0, 0, 0),
+        )
+        for index, item in enumerate(items):
+            preview = item.get("preview") or {}
+            supports_facing = (
+                preview.get("supports_facing") and preview.get("format") != "vxl"
+            )
+            source_facing = (4 + preview_angle) % 8 if supports_facing else 0
+            entity_id = _safe_filename(str(item["id"]))
+            source = (
+                root
+                / "previews"
+                / "entities"
+                / entity_id
+                / "thumbnail"
+                / str(source_facing)
+                / "0.webp"
+            )
+            if not source.is_file():
+                raise Ra2ExplorerError(f"搜索单位缩略图图集缺少来源：{item['id']}")
+            with Image.open(source) as image:
+                cell = _entity_search_thumbnail_cell(image)
+            atlas.alpha_composite(
+                cell,
+                (
+                    index % columns * _ENTITY_SEARCH_ATLAS_CELL_SIZE,
+                    index // columns * _ENTITY_SEARCH_ATLAS_CELL_SIZE,
+                ),
+            )
+        _save_webp(
+            atlas,
+            root / sheet_pattern.replace("{facing}", str(preview_angle)),
+        )
+    return metadata
+
+
 def _attach_entity_thumbnail_atlases(
     catalogs: dict[str, tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]],
     metadata: dict[str, dict[str, object]],
+    search_metadata: dict[str, dict[str, object]],
 ) -> None:
     for entities, _media, _details in catalogs.values():
         for item in entities["items"]:
             atlas = metadata.get(str(item["id"]))
             if atlas is not None:
                 item["thumbnail_atlas"] = atlas
+            search_atlas = search_metadata.get(str(item["id"]))
+            if search_atlas is not None:
+                item["search_thumbnail_atlas"] = search_atlas
 
 
 def _composite_entity_preview_layers(
@@ -1101,6 +1336,12 @@ def build_pages_snapshot(
             animation_usages,
             metadata,
         )
+        entity_effect_images = _entity_operation_effect_tasks(
+            staging,
+            source_id,
+            details_cn,
+            metadata,
+        )
         _export_shp_animation_previews(
             app.state.services,
             staging,
@@ -1115,12 +1356,20 @@ def build_pages_snapshot(
             workers=workers,
         )
         thumbnail_atlases = _export_entity_thumbnail_atlases(staging, details_cn)
-        _attach_entity_thumbnail_atlases(catalogs, thumbnail_atlases)
+        search_thumbnail_atlases = _export_entity_search_thumbnail_atlases(
+            staging,
+            details_cn,
+        )
+        _attach_entity_thumbnail_atlases(
+            catalogs,
+            thumbnail_atlases,
+            search_thumbnail_atlases,
+        )
         for language, (entities, _media, _details) in catalogs.items():
             _write_json(staging / "catalog" / f"entities.{language}.json", entities)
         _export_render_tasks(
             client,
-            animation_images,
+            animation_images + entity_effect_images,
             workers=workers,
             label="生成 WebP 预览",
         )
@@ -1180,6 +1429,7 @@ def build_pages_snapshot(
         manifest = {
             "schema_version": PAGES_SNAPSHOT_SCHEMA_VERSION,
             "render_revision": PAGES_RENDER_REVISION,
+            "asset_bundle_revision": PAGES_ASSET_BUNDLE_REVISION,
             "snapshot_id": snapshot_id,
             "created_at": generated_at,
             "app_version": __version__,

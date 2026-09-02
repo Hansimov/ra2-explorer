@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import { cachedAudioResourceUrl } from "./resourcePreload";
+import { cachedAudioResourceUrl, cancelAudioResourcePreload } from "./resourcePreload";
 
 interface AudioPlaybackState {
   assetId: string;
@@ -56,6 +56,7 @@ export function playAudioAsset(assetId: string, url: string) {
   const audio = audioElement();
   const cachedUrl = cachedAudioResourceUrl(url);
   const playableUrl = cachedUrl || url;
+  if (!cachedUrl) cancelAudioResourcePreload(url);
   if (playbackState.assetId !== assetId || sourceUrl !== playableUrl) {
     audio.pause();
     sourceUrl = playableUrl;

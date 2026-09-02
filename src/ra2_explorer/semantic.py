@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import threading
 from collections import Counter, OrderedDict
@@ -24,6 +25,7 @@ from ra2_explorer.codecs.vxl import (
     build_vxl_scene,
     parse_vxl,
     render_vxl_composite,
+    render_vxl_composite_with_anchor,
 )
 from ra2_explorer.errors import AssetNotFoundError, InvalidFormatError, Ra2ExplorerError
 from ra2_explorer.library import AssetReader
@@ -39,7 +41,7 @@ from ra2_explorer.storage import Database
 ENTITY_KINDS = ("vehicle", "infantry", "aircraft", "building")
 ENTITY_USAGES = ("buildable", "hero", "tech", "civilian", "scenario")
 UNAFFILIATED_SIDE = "unaffiliated"
-SEMANTIC_CATALOG_CACHE_IDENTITY = ("semantic-catalog-v10",)
+SEMANTIC_CATALOG_CACHE_IDENTITY = ("semantic-catalog-v19",)
 _PLANNING_SIDE_IDS = ("GDI", "Nod", "ThirdSide")
 _TYPE_SECTIONS = {
     "vehicle": "VehicleTypes",
@@ -62,6 +64,11 @@ _RULE_FIELDS = {
     "elite_primary": "eliteprimary",
     "elite_secondary": "elitesecondary",
     "turret": "turret",
+    "turret_anim": "turretanim",
+    "turret_anim_is_voxel": "turretanimisvoxel",
+    "turret_anim_x": "turretanimx",
+    "turret_anim_y": "turretanimy",
+    "turret_anim_z_adjust": "turretanimzadjust",
     "naval": "naval",
     "considered_aircraft": "consideredaircraft",
     "ai_base_planning_side": "aibaseplanningside",
@@ -82,6 +89,7 @@ _ART_FIELDS = {
     "voxel": "voxel",
     "new_theater": "newtheater",
     "foundation": "foundation",
+    "bib_shape": "bibshape",
     "facings": "facings",
     "sequence": "sequence",
     "walk_frames": "walkframes",
@@ -180,6 +188,9 @@ _SIDE_DISPLAY_NAMES = {
     "thirdside": "尤里",
 }
 _EVA_UNIT_ENTITY_IDS = {
+    "aegis": "AEGIS",
+    "aircraftcarrier": "CARRIER",
+    "apocalypse": "APOC",
     "barracksyuri": "YABRCK",
     "batlabyuri": "YATECH",
     "battlebunker": "NABNKR",
@@ -192,9 +203,14 @@ _EVA_UNIT_ENTITY_IDS = {
     "brute": "BRUTE",
     "chaos": "CAOS",
     "chaosdrone": "CAOS",
+    "chronolegion": "CCOMAND",
     "clonevat": "NACLON",
     "cloningvat": "NACLON",
     "demotruck": "DTRUCK",
+    "desolator": "DESO",
+    "destroyer": "DEST",
+    "dreadnought": "DRED",
+    "engineer": "ENGINEER",
     "floatdisc": "DISK",
     "gatcannon": "YAGGUN",
     "gattank": "YTNK",
@@ -204,7 +220,10 @@ _EVA_UNIT_ENTITY_IDS = {
     "guardiangi": "GGI",
     "hoveryuri": "YHVR",
     "industrialplant": "NAINDP",
+    "ifv": "FV",
     "initiate": "INIT",
+    "intruder": "ORCA",
+    "kirov": "ZEP",
     "lasercosmo": "LUNR",
     "lasher": "LTNK",
     "magnetron": "TELE",
@@ -214,14 +233,20 @@ _EVA_UNIT_ENTITY_IDS = {
     "psychicsensor": "NAPSIS",
     "psychsensor": "NAPSIS",
     "psychictower": "YAPSYT",
+    "psicorpse": "YURI",
     "psychtower": "YAPSYT",
     "robotcontrol": "GAROBO",
     "robottank": "ROBO",
     "siegechopper": "SCHP",
+    "seascorpion": "HYD",
+    "seal": "GHOST",
     "slave": "SLAV",
     "slaveminer": "SMIN",
     "sniper": "SNIPE",
     "spyplane": "SPYP",
+    "spy": "SPY",
+    "squid": "SQD",
+    "sub": "SUB",
     "subpen": "YAYARD",
     "tankbunk": "NATBNK",
     "tankdestroyer": "TNKD",
@@ -229,20 +254,22 @@ _EVA_UNIT_ENTITY_IDS = {
     "techmachshop": "CAMACH",
     "techsecretlab": "CASLAB",
     "terrorist": "TERROR",
+    "terrordrone": "DRON",
     "teslatank": "TTNK",
+    "v3": "V3",
     "virus": "VIRUS",
     "wallyuri": "GAFWLL",
     "yuriclone": "YURI",
     "yurieng": "YENGINEER",
     "yuriprime": "YURIPR",
     "yuriwar": "YAWEAP",
-}
-_EVA_UNIT_STATIC_TEXT = {
-    "forceshieldall": ("Allied Force Shield", "盟军力场护盾"),
-    "forceshieldsov": ("Soviet Force Shield", "苏军力场护盾"),
-    "forceshieldyur": ("Yuri Force Shield", "尤里力场护盾"),
-    "forceshieldyuri": ("Yuri Force Shield", "尤里力场护盾"),
-    "paratrooper": ("Paratroopers", "伞兵"),
+    "crazyivan": "IVAN",
+    "gi": "E1",
+    "miragetank": "MGTK",
+    "paratrooper": "E1",
+    "prismtank": "SREF",
+    "rocketeer": "JUMPJET",
+    "shocktrooper": "SHK",
 }
 _MEDIA_EVENT_DESCRIPTIONS = {
     "eva_psychicrevealready": "心灵揭示就绪提示音",
@@ -348,6 +375,7 @@ class AnimationPlayback:
     loop_count: int | None = None
     direction: str | None = None
     shadow: bool = False
+    reverse: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -361,6 +389,7 @@ class AnimationPlayback:
             "loop_count": self.loop_count,
             "direction": self.direction,
             "shadow": self.shadow,
+            "reverse": self.reverse,
         }
 
 
@@ -376,9 +405,7 @@ class MediaSample:
     weight: int = 1
     palette: str | None = None
 
-    def as_dict(
-        self, language: GameLanguage = DEFAULT_GAME_LANGUAGE
-    ) -> dict[str, object]:
+    def as_dict(self, language: GameLanguage = DEFAULT_GAME_LANGUAGE) -> dict[str, object]:
         return {
             "name": self.name,
             "text": localize_game_text(self.text, language),
@@ -406,9 +433,12 @@ class MediaAssociation:
     selection_value: int | None = None
     rule_field: str | None = None
 
-    def as_dict(
-        self, language: GameLanguage = DEFAULT_GAME_LANGUAGE
-    ) -> dict[str, object]:
+    def as_dict(self, language: GameLanguage = DEFAULT_GAME_LANGUAGE) -> dict[str, object]:
+        samples = (
+            tuple(_sound_description_sample(sample) for sample in self.samples)
+            if self.kind == "sound"
+            else self.samples
+        )
         return {
             "kind": self.kind,
             "slot": self.slot,
@@ -420,7 +450,7 @@ class MediaAssociation:
             "selected_sample": self.selected_sample,
             "selection_value": self.selection_value,
             "rule_field": self.rule_field,
-            "samples": [sample.as_dict(language) for sample in self.samples],
+            "samples": [sample.as_dict(language) for sample in samples],
         }
 
 
@@ -454,19 +484,25 @@ class GameEntity:
             None,
         )
 
-    def summary(
-        self, language: GameLanguage = DEFAULT_GAME_LANGUAGE
-    ) -> dict[str, object]:
+    def summary(self, language: GameLanguage = DEFAULT_GAME_LANGUAGE) -> dict[str, object]:
         body = self.component("body")
+        turret = self.component("turret")
+        body_is_voxel = bool(body and body["format"] == "vxl")
+        turret_is_voxel = bool(turret and turret.get("format") == "vxl")
+        facing_format = (
+            "vxl"
+            if body_is_voxel or turret_is_voxel
+            else "shp"
+            if body
+            else None
+        )
         display_name = localize_game_text(self.display_name, language) or self.display_name
         affiliation = None
         if self.affiliation is not None:
             affiliation = {
                 "kind": self.affiliation["kind"],
                 "id": self.affiliation["id"],
-                "display_name": localize_game_text(
-                    str(self.affiliation["display_name"]), language
-                ),
+                "display_name": localize_game_text(str(self.affiliation["display_name"]), language),
                 "icon": _asset_summary(self.affiliation.get("icon")),
             }
         return {
@@ -492,6 +528,7 @@ class GameEntity:
             ),
             "component_count": sum(component.asset is not None for component in self.components),
             "body_format": body["format"] if body else None,
+            "facing_format": facing_format,
             "media_kinds": sorted({association.kind for association in self.media}),
             "media_count": len(self.media),
             "cost": self.rules.get("cost"),
@@ -504,9 +541,7 @@ class GameEntity:
             "primary": self.rules.get("primary"),
         }
 
-    def as_dict(
-        self, language: GameLanguage = DEFAULT_GAME_LANGUAGE
-    ) -> dict[str, object]:
+    def as_dict(self, language: GameLanguage = DEFAULT_GAME_LANGUAGE) -> dict[str, object]:
         return {
             **self.summary(language),
             "rules": self.rules,
@@ -564,6 +599,7 @@ def deserialize_semantic_catalog(payload: dict[str, object]) -> SemanticCatalog:
             loop_count=_optional_int(values.get("loop_count")),
             direction=_optional_text(values.get("direction")),
             shadow=bool(values.get("shadow")),
+            reverse=bool(values.get("reverse")),
         )
 
     def sample(value: object) -> MediaSample:
@@ -622,9 +658,7 @@ def deserialize_semantic_catalog(payload: dict[str, object]) -> SemanticCatalog:
                     bool(dependency.get("resolved")),
                     {
                         str(key): str(value)
-                        for key, value in _snapshot_mapping(
-                            dependency.get("properties")
-                        ).items()
+                        for key, value in _snapshot_mapping(dependency.get("properties")).items()
                     },
                 )
             )
@@ -641,22 +675,17 @@ def deserialize_semantic_catalog(payload: dict[str, object]) -> SemanticCatalog:
             voxel=bool(values.get("voxel")),
             countries=tuple(str(item) for item in _snapshot_sequence(values.get("countries"))),
             sides=tuple(str(item) for item in _snapshot_sequence(values.get("sides"))),
-            affiliation=(
-                dict(_snapshot_mapping(affiliation)) if affiliation is not None else None
-            ),
+            affiliation=(dict(_snapshot_mapping(affiliation)) if affiliation is not None else None),
             rules={
                 str(key): str(value)
                 for key, value in _snapshot_mapping(values.get("rules")).items()
             },
             art={
-                str(key): str(value)
-                for key, value in _snapshot_mapping(values.get("art")).items()
+                str(key): str(value) for key, value in _snapshot_mapping(values.get("art")).items()
             },
             components=tuple(components),
             dependencies=tuple(dependencies),
-            media=tuple(
-                association(item) for item in _snapshot_sequence(values.get("media"))
-            ),
+            media=tuple(association(item) for item in _snapshot_sequence(values.get("media"))),
         )
 
     audio_events = {
@@ -677,10 +706,7 @@ def deserialize_semantic_catalog(payload: dict[str, object]) -> SemanticCatalog:
             association(item) for item in _snapshot_sequence(raw_catalog.get("eva_events"))
         ),
         countries=tuple(
-            {
-                str(key): str(value)
-                for key, value in _snapshot_mapping(item).items()
-            }
+            {str(key): str(value) for key, value in _snapshot_mapping(item).items()}
             for item in _snapshot_sequence(raw_catalog.get("countries"))
         ),
         media_items=tuple(
@@ -774,9 +800,7 @@ class SemanticLibrary:
             extension="json",
         )
 
-    def _load_catalog_snapshot(
-        self, source: dict[str, object]
-    ) -> SemanticCatalog | None:
+    def _load_catalog_snapshot(self, source: dict[str, object]) -> SemanticCatalog | None:
         path = self._catalog_snapshot_path(source)
         if path is None:
             return None
@@ -842,9 +866,7 @@ class SemanticLibrary:
             entities = [entity for entity in entities if entity.usage == usage]
         country_counts = Counter(country for entity in entities for country in entity.countries)
         side_counts = Counter(
-            faction_id
-            for entity in entities
-            for faction_id in _entity_faction_ids(entity)
+            faction_id for entity in entities for faction_id in _entity_faction_ids(entity)
         )
         if side:
             selected_side = side.casefold()
@@ -880,9 +902,7 @@ class SemanticLibrary:
                 if country_counts.get(country["id"], 0)
             ],
             "sides": [
-                {"id": side, "count": count}
-                for side, count in sorted(side_counts.items())
-                if side
+                {"id": side, "count": count} for side, count in sorted(side_counts.items()) if side
             ],
             "warnings": list(catalog.warnings),
         }
@@ -946,8 +966,7 @@ class SemanticLibrary:
         total = len(items)
         return {
             "items": [
-                _localized_media_item(item, language)
-                for item in items[offset : offset + limit]
+                _localized_media_item(item, language) for item in items[offset : offset + limit]
             ],
             "total": total,
             "kinds": [
@@ -986,6 +1005,7 @@ class SemanticLibrary:
         requested_asset = self.database.get_asset(asset_id)
         items: list[dict[str, object]] = []
         seen: set[tuple[str, ...]] = set()
+        entities_by_id = {entity.id.casefold(): entity for entity in catalog.entities}
 
         def append(item: dict[str, object], key: tuple[str, ...]) -> None:
             if key not in seen:
@@ -1011,18 +1031,23 @@ class SemanticLibrary:
             for association in entity.media:
                 for sample in association.samples:
                     if sample.asset and sample.asset["id"] == asset_id:
+                        presented = (
+                            _sound_description_sample(sample)
+                            if association.kind == "sound"
+                            else sample
+                        )
                         append(
                             {
                                 "scope": "entity",
                                 "kind": association.kind,
                                 "slot": association.slot,
                                 "event": association.event,
-                            "entity": entity.summary(language),
-                            "text": localize_game_text(sample.text, language),
-                            "original_text": sample.original_text,
-                            "localized_text": localize_game_text(
-                                sample.localized_text, language
-                            ),
+                                "entity": entity.summary(language),
+                                "text": localize_game_text(presented.text, language),
+                                "original_text": presented.original_text,
+                                "localized_text": localize_game_text(
+                                    presented.localized_text, language
+                                ),
                             },
                             (
                                 "entity",
@@ -1034,19 +1059,25 @@ class SemanticLibrary:
                         )
 
         for association in catalog.eva_events:
+            event_entity = _eva_event_entity(association.event, entities_by_id)
             for sample in association.samples:
                 if sample.asset and sample.asset["id"] == asset_id:
+                    presented = (
+                        _sound_description_sample(sample) if association.kind == "sound" else sample
+                    )
                     append(
                         {
                             "scope": "event",
                             "kind": association.kind,
                             "slot": association.slot,
                             "event": association.event,
-                            "entity": None,
-                            "text": localize_game_text(sample.text, language),
-                            "original_text": sample.original_text,
+                            "entity": (
+                                event_entity.summary(language) if event_entity is not None else None
+                            ),
+                            "text": localize_game_text(presented.text, language),
+                            "original_text": presented.original_text,
                             "localized_text": localize_game_text(
-                                sample.localized_text, language
+                                presented.localized_text, language
                             ),
                         },
                         (
@@ -1061,6 +1092,9 @@ class SemanticLibrary:
             for sample in samples:
                 if sample.asset and sample.asset["id"] == asset_id:
                     media_kind = _media_kind_for_asset(catalog.media_items, sample.asset)
+                    presented = (
+                        _sound_description_sample(sample) if media_kind == "sound" else sample
+                    )
                     append(
                         {
                             "scope": "event",
@@ -1068,10 +1102,10 @@ class SemanticLibrary:
                             "slot": "sound_event",
                             "event": event,
                             "entity": None,
-                            "text": localize_game_text(sample.text, language),
-                            "original_text": sample.original_text,
+                            "text": localize_game_text(presented.text, language),
+                            "original_text": presented.original_text,
                             "localized_text": localize_game_text(
-                                sample.localized_text, language
+                                presented.localized_text, language
                             ),
                         },
                         (media_kind, event.casefold(), sample.name.casefold()),
@@ -1131,9 +1165,7 @@ class SemanticLibrary:
         renderable_count = sum(entity.renderable for entity in entities)
         localized_count = sum(entity.ui_name_resolved for entity in entities)
         resolved_components = sum(
-            component.asset is not None
-            for entity in entities
-            for component in entity.components
+            component.asset is not None for entity in entities for component in entity.components
         )
         component_count = sum(len(entity.components) for entity in entities)
         return {
@@ -1159,8 +1191,7 @@ class SemanticLibrary:
                 for kind in ENTITY_KINDS
             ],
             "missing_components": [
-                {"role": role, "count": count}
-                for role, count in missing_roles.most_common()
+                {"role": role, "count": count} for role, count in missing_roles.most_common()
             ],
             "samples": {
                 "missing_body": [
@@ -1221,21 +1252,7 @@ class SemanticLibrary:
         if not sprite.frames:
             raise InvalidFormatError("单位 SHP 没有可渲染帧")
         visible_frames = self._entity_shp_frames(entity, body, sprite)
-        if not visible_frames:
-            # A few retail buildings, notably NATBNK, intentionally keep an empty
-            # base SHP and draw their complete appearance through ArtType operation
-            # layers.  Preserve the source canvas so the API can composite those
-            # layers instead of incorrectly reporting a missing body.
-            if entity.kind == "building":
-                return (
-                    entity,
-                    Image.new(
-                        "RGBA",
-                        (max(1, sprite.width * scale), max(1, sprite.height * scale)),
-                        (0, 0, 0, 0),
-                    ),
-                    None,
-                )
+        if not visible_frames and entity.kind != "building":
             raise InvalidFormatError("单位 SHP 的所有帧均为空")
         active_palette = palette
         if player_color:
@@ -1245,27 +1262,103 @@ class SemanticLibrary:
             sequence_frame
             if sequence_frame is not None and sequence_frame < len(sprite.frames)
             else visible_frames[frame % len(visible_frames)]
+            if visible_frames
+            else 0
         )
         focus_bounds = sprite.content_bounds(source_frame)
+        image = sprite.render(
+            source_frame,
+            active_palette,
+            scale=scale,
+            shadow_frame=sprite.paired_shadow_frame(source_frame),
+        )
+        scaled_focus_bounds = (
+            (
+                focus_bounds[0] * scale,
+                focus_bounds[1] * scale,
+                (focus_bounds[0] + focus_bounds[2]) * scale,
+                (focus_bounds[1] + focus_bounds[3]) * scale,
+            )
+            if focus_bounds is not None
+            else None
+        )
+        bib = entity.component("bib") if entity.kind == "building" else None
+        if bib is not None:
+            bib_sprite = self._parse_asset(bib, parse_shp)
+            if bib_sprite.frames:
+                bib_frame = next(
+                    (item.index for item in bib_sprite.frames if not item.empty),
+                    0,
+                )
+                bib_image = bib_sprite.render(
+                    bib_frame,
+                    active_palette,
+                    scale=scale,
+                    shadow_frame=bib_sprite.paired_shadow_frame(bib_frame),
+                )
+                width = max(image.width, bib_image.width)
+                height = max(image.height, bib_image.height)
+                combined = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+                combined.alpha_composite(
+                    bib_image,
+                    ((width - bib_image.width) // 2, (height - bib_image.height) // 2),
+                )
+                combined.alpha_composite(
+                    image,
+                    ((width - image.width) // 2, (height - image.height) // 2),
+                )
+                image = combined
+                scaled_focus_bounds = image.getchannel("A").getbbox()
         return (
             entity,
-            sprite.render(
-                source_frame,
-                active_palette,
-                scale=scale,
-                shadow_frame=sprite.paired_shadow_frame(source_frame),
-            ),
-            (
-                (
-                    focus_bounds[0] * scale,
-                    focus_bounds[1] * scale,
-                    (focus_bounds[0] + focus_bounds[2]) * scale,
-                    (focus_bounds[1] + focus_bounds[3]) * scale,
-                )
-                if focus_bounds is not None
-                else None
-            ),
+            image,
+            scaled_focus_bounds,
         )
+
+    def render_building_voxel_turret(
+        self,
+        source_id: str,
+        entity: GameEntity,
+        *,
+        palette: Palette | None,
+        frame: int,
+        facing: int,
+        player_color: str | None,
+        scale: int,
+    ) -> tuple[Image.Image, tuple[int, int]] | None:
+        body = entity.component("body")
+        if entity.kind != "building" or body is None or body["format"] != "shp":
+            return None
+        parts = self._voxel_parts(
+            entity,
+            roles=(("turret", "turret_hva"), ("barrel", "barrel_hva")),
+        )
+        if not parts:
+            return None
+        raster_scale = max(1, math.ceil(scale / 4))
+        image, anchor = render_vxl_composite_with_anchor(
+            parts,
+            palette=palette,
+            frame=frame,
+            facing=facing,
+            player_color=player_color,
+            vpl=self.voxel_lighting(source_id),
+            scale=raster_scale,
+        )
+        resize_factor = scale / (4 * raster_scale)
+        if resize_factor != 1:
+            image = image.resize(
+                (
+                    max(1, round(image.width * resize_factor)),
+                    max(1, round(image.height * resize_factor)),
+                ),
+                Image.Resampling.NEAREST,
+            )
+            anchor = (
+                round(anchor[0] * resize_factor),
+                round(anchor[1] * resize_factor),
+            )
+        return image, anchor
 
     def model_scene(
         self,
@@ -1303,13 +1396,18 @@ class SemanticLibrary:
 
         return self._parse_asset(max(candidates, key=priority), parse_vpl)
 
-    def _voxel_parts(self, entity: GameEntity) -> tuple[VxlRenderPart, ...]:
-        parts = []
-        for role, animation_role in (
+    def _voxel_parts(
+        self,
+        entity: GameEntity,
+        *,
+        roles: tuple[tuple[str, str], ...] = (
             ("body", "body_hva"),
             ("turret", "turret_hva"),
             ("barrel", "barrel_hva"),
-        ):
+        ),
+    ) -> tuple[VxlRenderPart, ...]:
+        parts = []
+        for role, animation_role in roles:
             asset = entity.component(role)
             if not asset:
                 continue
@@ -1332,7 +1430,7 @@ class SemanticLibrary:
                 "metadata",
                 source_id=source["id"],
                 revision=source.get("scanned_at") or source["created_at"],
-                identity=(entity.id, "entity-preview-info-v2"),
+                identity=(entity.id, "entity-preview-info-v4"),
                 extension="json",
             )
             if self.reader.derived is not None
@@ -1342,6 +1440,9 @@ class SemanticLibrary:
         if cached is not None:
             return cached
         body = entity.component("body")
+        voxel_turret = entity.component("turret")
+        has_voxel_turret = bool(voxel_turret and voxel_turret.get("format") == "vxl")
+        body_is_voxel = bool(body and body["format"] == "vxl")
         sequence_facings = any(
             sample.animation and sample.animation.facing_step > 0
             for association in entity.media
@@ -1350,17 +1451,28 @@ class SemanticLibrary:
         )
         facing_count = (
             8
-            if entity.voxel or sequence_facings
+            if entity.voxel or has_voxel_turret or sequence_facings
             else _positive_int(entity.art.get("facings"), 1)
         )
         base: dict[str, object] = {
             "format": str(body["format"]) if body else None,
+            "facing_format": (
+                "vxl"
+                if body_is_voxel or has_voxel_turret
+                else "shp"
+                if body
+                else None
+            ),
             "frame_count": 0 if body is None else 1,
             "facing_count": facing_count,
-            "supports_facing": bool(body and (body["format"] == "vxl" or sequence_facings)),
+            "supports_facing": bool(
+                body and (body["format"] == "vxl" or has_voxel_turret or sequence_facings)
+            ),
             # Every VXL carries an explicit remap range. Some retail ART sections omit
             # Remapable even though the renderer can apply that range (for example DDBX).
-            "supports_player_color": entity.voxel or _yes(entity.art.get("remapable")),
+            "supports_player_color": (
+                entity.voxel or has_voxel_turret or _yes(entity.art.get("remapable"))
+            ),
         }
         if body is None:
             if path is not None:
@@ -1480,7 +1592,11 @@ class SemanticLibrary:
         asset_index = _index_assets(assets)
 
         warnings = []
-        rules_assets = _named_inputs(asset_index.by_name, ("rules.ini", "rulesmd.ini"))
+        rules_assets = _edition_ini_inputs(
+            asset_index.by_name,
+            "rules.ini",
+            "rulesmd.ini",
+        )
         art_assets = _named_inputs(asset_index.by_name, ("art.ini", "artmd.ini"))
         sound_assets = _named_inputs(asset_index.by_name, ("sound.ini", "soundmd.ini"))
         eva_assets = _named_inputs(asset_index.by_name, ("eva.ini", "evamd.ini"))
@@ -1500,9 +1616,7 @@ class SemanticLibrary:
         )
         audio_events = _build_audio_events(sounds, asset_index, voice_strings)
         country_definitions = _build_country_definitions(rules, strings)
-        country_lookup = {
-            country["id"].casefold(): country for country in country_definitions
-        }
+        country_lookup = {country["id"].casefold(): country for country in country_definitions}
 
         entities = []
         seen = set()
@@ -1528,9 +1642,12 @@ class SemanticLibrary:
                 localized_name = strings.get(ui_name.casefold()) if ui_name else None
                 display_name = localized_name or internal_name
                 voxel = _yes(art_values.get("voxel"))
-                components, detected_voxel = _resolve_components(
+                components, resolved_voxel = _resolve_components(
                     asset_index,
+                    kind,
+                    entity_id,
                     image,
+                    rule_values,
                     art_values,
                     voxel,
                     _yes(rule_values.get("turret")),
@@ -1557,7 +1674,7 @@ class SemanticLibrary:
                         ui_name,
                         localized_name is not None,
                         image,
-                        voxel or detected_voxel,
+                        resolved_voxel,
                         countries,
                         tuple(side for side in sides if side),
                         _entity_affiliation(
@@ -1631,8 +1748,10 @@ def _build_country_definitions(
         values = rules.get(country_id.casefold(), {})
         ui_name = values.get("uiname")
         display_name = (
-            strings.get(ui_name.casefold(), "") if ui_name else ""
-        ) or values.get("name") or country_id
+            (strings.get(ui_name.casefold(), "") if ui_name else "")
+            or values.get("name")
+            or country_id
+        )
         countries.append(
             {
                 "id": country_id,
@@ -1727,7 +1846,7 @@ _VOICE_MEDIA_GROUP_SLOTS = (
     ),
 )
 _SOUND_MEDIA_GROUP_SLOTS = (
-    ("combat_sound", frozenset({"attack", "special_attack"})),
+    ("weapon_sound", frozenset({"attack", "special_attack"})),
     ("death_sound", frozenset({"die"})),
     (
         "movement_sound",
@@ -1807,8 +1926,7 @@ def _sound_description_sample(sample: MediaSample) -> MediaSample:
     def cleaned(value: str | None) -> str | None:
         if value is None:
             return None
-        stripped = value.strip()
-        return stripped[1:].strip() if stripped.startswith("*") else stripped
+        return value.strip().strip("*").strip()
 
     return replace(
         sample,
@@ -1819,7 +1937,10 @@ def _sound_description_sample(sample: MediaSample) -> MediaSample:
 
 
 def _standalone_sound_group(event: str, sample: MediaSample) -> str:
-    folded = _normalized_media_event(f"{event} {sample.name}")
+    # SOUND/SOUNDMD section names are the authoritative event identity. Sample
+    # names are often abbreviated and contain accidental substrings such as
+    # ``amb``; use them only for truly orphaned samples without an event name.
+    folded = _normalized_media_event(event) or _normalized_media_event(sample.name)
     if any(
         token in folded
         for token in (
@@ -1847,7 +1968,7 @@ def _standalone_sound_group(event: str, sample: MediaSample) -> str:
             "upgradeveteran",
         )
     ):
-        return "pickup_sound"
+        return "notification_sound"
     if any(
         token in folded
         for token in (
@@ -1855,7 +1976,11 @@ def _standalone_sound_group(event: str, sample: MediaSample) -> str:
             "geneticmutator",
             "ironcurtain",
             "nuke",
+            "nuclear",
+            "chronosphere",
+            "chronoscreen",
             "psychicdominator",
+            "psychicreveal",
             "weather",
         )
     ):
@@ -1888,6 +2013,22 @@ def _standalone_sound_group(event: str, sample: MediaSample) -> str:
             "mindcleared",
             "flare",
             "crazyivanbombtick",
+            "bonus",
+            "cratemoney",
+            "creditdown",
+            "creditup",
+            "cameraswitch",
+            "cheer",
+            "gameclosed",
+            "genericbeep",
+            "buildinggarrisoned",
+            "bridgerepaired",
+            "buildingrepaired",
+            "nocando",
+            "playerjoined",
+            "newgame",
+            "radaroff",
+            "radaron",
         )
     ):
         return "notification_sound"
@@ -1896,7 +2037,7 @@ def _standalone_sound_group(event: str, sample: MediaSample) -> str:
     if "tankcrush" in folded:
         return "impact_sound"
     if "fear" in folded:
-        return "combat_sound"
+        return "action_sound"
     if any(token in folded for token in ("yurimindcontrol", "kirovelitebomb")):
         return "weapon_sound"
     if any(
@@ -1917,37 +2058,32 @@ def _standalone_sound_group(event: str, sample: MediaSample) -> str:
         )
     ):
         return "action_sound"
-    if any(token in folded for token in ("ambient", "amb", "bird", "wind", "water")):
-        return "ambient_sound"
+    if any(token in folded for token in ("expl", "detonat", "blast", "destruct")):
+        return "destruction_sound"
+    if any(
+        token in folded
+        for token in ("impact", "crash", "splash", "sinking", "damaged", "collision")
+    ):
+        return "impact_sound"
     if any(
         token in folded
         for token in ("underattack", "warning", "alarm", "beacon", "detected", "ready")
     ):
         return "notification_sound"
-    if _is_descriptive_sound_text(sample) or any(
+    if any(
         token in folded
         for token in (
             "menu",
-            "credit",
-            "camera",
             "commandbar",
             "options",
             "message",
+            "movie",
             "planningmode",
-            "radar",
             "score",
             "textbleep",
-            "gameclosed",
-            "playerjoined",
-            "newgame",
-            "cratemoney",
         )
     ):
         return "interface_sound"
-    if any(token in folded for token in ("expl", "detonat", "blast", "destruct")):
-        return "destruction_sound"
-    if any(token in folded for token in ("impact", "crash", "splash", "sinking")):
-        return "impact_sound"
     if any(token in folded for token in ("attack", "fire", "weapon", "shot")):
         return "weapon_sound"
     if any(
@@ -1970,9 +2106,16 @@ def _standalone_sound_group(event: str, sample: MediaSample) -> str:
             "chrono",
             "transport",
             "harvest",
+            "enter",
+            "leave",
+            "emerge",
+            "merge",
+            "select",
         )
     ):
         return "action_sound"
+    if any(token in folded for token in ("ambient", "amb", "bird", "wind", "water")):
+        return "ambient_sound"
     return "other_sound"
 
 
@@ -1991,17 +2134,14 @@ def _refined_media_groups(
         if semantic_groups:
             refined.difference_update({"unit_voice", "other_voice"})
             refined.update(semantic_groups)
-    elif kind == "sound" and refined.intersection(
-        {"combat_sound", "unit_sound", "other_sound"}
-    ):
+    elif kind == "sound" and refined.intersection({"combat_sound", "unit_sound", "other_sound"}):
         semantic_groups = {
             group
             for group, group_slots in _SOUND_MEDIA_GROUP_SLOTS
             if slots.intersection(group_slots)
         }
         if any(
-            re.fullmatch(r"(?:elite_)?(?:primary|secondary|weapon_\d+)", slot)
-            for slot in slots
+            re.fullmatch(r"(?:elite_)?(?:primary|secondary|weapon_\d+)", slot) for slot in slots
         ):
             semantic_groups.add("weapon_sound")
         if semantic_groups:
@@ -2043,9 +2183,7 @@ def _mission_context(
         if mission_match:
             return context(
                 "yr" if mission_match.group(1) else "ra2",
-                {"a": "allied", "s": "soviet", "t": "tutorial"}[
-                    mission_match.group(2)
-                ],
+                {"a": "allied", "s": "soviet", "t": "tutorial"}[mission_match.group(2)],
                 mission_match.group(3),
             )
         briefing_match = re.match(r"^([as])(\d{2})[_-]p\d+$", event)
@@ -2071,9 +2209,7 @@ def _mission_context(
     if original_stem_match:
         return context(
             "ra2",
-            {"a": "allied", "s": "soviet", "t": "tutorial"}[
-                original_stem_match.group(1)
-            ],
+            {"a": "allied", "s": "soviet", "t": "tutorial"}[original_stem_match.group(1)],
             original_stem_match.group(2),
         )
     briefing_stem_match = re.match(r"^([as])(\d{2})[_-]p\d+$", stem)
@@ -2183,6 +2319,7 @@ def _build_media_items(
     eva_events: tuple[MediaAssociation, ...],
     voice_strings: dict[str, VoiceText],
 ) -> tuple[dict[str, object], ...]:
+    entities_by_id = {entity.id.casefold(): entity for entity in entities}
     representatives: dict[str, dict[str, Any]] = {}
     for asset in assets:
         if asset["format"] not in {"bag_audio", "wav", "aud"}:
@@ -2224,6 +2361,8 @@ def _build_media_items(
         slot: str | tuple[str, ...],
         entity: GameEntity | None = None,
     ) -> None:
+        if kind == "sound":
+            sample = _sound_description_sample(sample)
         state = state_for(sample)
         if state is None:
             return
@@ -2245,12 +2384,10 @@ def _build_media_items(
             state["entities"][entity.id.casefold()] = {
                 "id": entity.id,
                 "display_name": entity.display_name,
+                "internal_name": entity.internal_name,
                 "kind": entity.kind,
                 "affiliation": (
-                    {
-                        key: entity.affiliation[key]
-                        for key in ("kind", "id", "display_name")
-                    }
+                    {key: entity.affiliation[key] for key in ("kind", "id", "display_name")}
                     if entity.affiliation is not None
                     else None
                 ),
@@ -2278,7 +2415,7 @@ def _build_media_items(
                     )
                 else:
                     group = (
-                        "combat_sound"
+                        "weapon_sound"
                         if association.slot in combat_slots or association.source != entity.id
                         else "unit_sound"
                     )
@@ -2306,11 +2443,7 @@ def _build_media_items(
                 )
             elif event_name.startswith(("unit_eva_", "unit_sofia_")):
                 kind, group = "voice", "unit_intel_voice"
-                slot = (
-                    "advisor_eva"
-                    if event_name.startswith("unit_eva_")
-                    else "advisor_sofia"
-                )
+                slot = "advisor_eva" if event_name.startswith("unit_eva_") else "advisor_sofia"
             elif event_name.startswith(("wwd_", "wwd-")):
                 kind, group = "voice", "world_domination_voice"
                 slot = association.slot
@@ -2326,6 +2459,11 @@ def _build_media_items(
                 group=group,
                 event=association.event,
                 slot=slot,
+                entity=(
+                    _eva_event_entity(association.event, entities_by_id)
+                    if group == "unit_intel_voice"
+                    else None
+                ),
             )
 
     for event, samples in audio_events.items():
@@ -2383,9 +2521,7 @@ def _build_media_items(
             stem = key.casefold()
             if not any(group.endswith("_voice") for group in state["groups"]):
                 state["groups"].add(
-                    "mission_voice"
-                    if re.match(r"^[a-z]\d{2}[_-]p\d+", stem)
-                    else "other_voice"
+                    "mission_voice" if re.match(r"^[a-z]\d{2}[_-]p\d+", stem) else "other_voice"
                 )
             taunt_match = re.fullmatch(r"tau([a-z]{2})(\d{2})", stem)
             if taunt_match:
@@ -2433,7 +2569,7 @@ def _build_media_items(
         if explosion_match:
             event = f"Explosion{explosion_match.group(1)}"
             state["sound"] = True
-            state["groups"].add("combat_sound")
+            state["groups"].add("destruction_sound")
             state["events"].add(event)
             state["slots"].add("explosion")
             continue
@@ -2456,7 +2592,17 @@ def _build_media_items(
     for state in states.values():
         kind = "voice" if state["voice"] else "sound" if state["sound"] else "unknown"
         asset_stem = str(state["asset"]["display_name"]).rsplit(".", 1)[0].casefold()
-        events = sorted(state["events"], key=str.casefold)
+        events = []
+        seen_events: set[str] = set()
+        for event in sorted(
+            state["events"],
+            key=lambda value: (value.casefold(), value == value.casefold(), value),
+        ):
+            folded_event = event.casefold()
+            if folded_event in seen_events:
+                continue
+            seen_events.add(folded_event)
+            events.append(event)
         mission = _mission_context(asset_stem, events) if kind == "voice" else None
         if mission is not None:
             state["slots"].difference_update({"eva_allied", "eva_soviet", "eva_yuri"})
@@ -2480,11 +2626,7 @@ def _build_media_items(
         if kind == "unknown":
             groups = ["unclassified"]
         if kind == "voice" and mission is not None and not state["entities"]:
-            groups = [
-                group
-                for group in groups
-                if group not in {"eva_voice", "other_voice"}
-            ]
+            groups = [group for group in groups if group not in {"eva_voice", "other_voice"}]
             if "mission_voice" not in groups:
                 groups.append("mission_voice")
                 groups.sort()
@@ -2498,8 +2640,7 @@ def _build_media_items(
                 groups = [
                     group
                     for group in groups
-                    if group not in {"eva_voice", "other_voice"}
-                    or group == specific_group
+                    if group not in {"eva_voice", "other_voice"} or group == specific_group
                 ]
         texts = sorted(state["texts"], key=str.casefold)
         original_texts = sorted(state["original_texts"], key=str.casefold)
@@ -2518,9 +2659,7 @@ def _build_media_items(
         elif description is None and "eva_voice" in groups and events:
             description = f"EVA 播报 · {events[0]}"
         elif description is None and events:
-            description = _MEDIA_EVENT_DESCRIPTIONS.get(
-                events[0].casefold(), events[0]
-            )
+            description = _MEDIA_EVENT_DESCRIPTIONS.get(events[0].casefold(), events[0])
         items.append(
             {
                 "asset": _asset_summary(state["asset"]),
@@ -2554,6 +2693,15 @@ def _named_inputs(
     return sorted(assets, key=_config_precedence)
 
 
+def _edition_ini_inputs(
+    by_name: dict[str, list[dict[str, Any]]],
+    base_name: str,
+    expansion_name: str,
+) -> list[dict[str, Any]]:
+    expansion = _named_inputs(by_name, (expansion_name,))
+    return expansion or _named_inputs(by_name, (base_name,))
+
+
 def _merge_ini_inputs(
     reader: AssetReader,
     assets: list[dict[str, Any]],
@@ -2581,16 +2729,7 @@ def _merge_csf_inputs(
     voice_transcripts: dict[str, dict[str, str]],
 ) -> tuple[dict[str, str], dict[str, VoiceText]]:
     strings: dict[str, str] = {}
-    voice_strings: dict[str, VoiceText] = {
-        key: VoiceText(
-            f"TRANSCRIPT:{key}",
-            transcript.get("localized_text") or transcript["text"],
-            transcript.get("original_text") or transcript["text"],
-            transcript.get("localized_text"),
-        )
-        for key, transcript in voice_transcripts.items()
-        if transcript.get("text")
-    }
+    voice_strings: dict[str, VoiceText] = {}
     for asset in assets:
         try:
             _, data = reader.read(str(asset["id"]))
@@ -2618,7 +2757,29 @@ def _merge_csf_inputs(
                             original_text,
                             localized_text,
                         )
+    _overlay_voice_transcripts(voice_strings, voice_transcripts)
     return strings, voice_strings
+
+
+def _overlay_voice_transcripts(
+    voice_strings: dict[str, VoiceText],
+    voice_transcripts: dict[str, dict[str, str]],
+) -> None:
+    """Apply verified spoken lines after CSF labels, which can contain only a unit name."""
+    for key, transcript in voice_transcripts.items():
+        if not transcript.get("text"):
+            continue
+        current = voice_strings.get(key)
+        original_text = transcript.get("original_text") or transcript["text"]
+        localized_text = transcript.get("localized_text") or (
+            current.localized_text if current else None
+        )
+        voice_strings[key] = VoiceText(
+            current.label if current else f"TRANSCRIPT:{key}",
+            localized_text or original_text,
+            original_text,
+            localized_text,
+        )
 
 
 def _voice_aliases(label_name: str, extra: str | None) -> tuple[str, ...]:
@@ -2683,9 +2844,7 @@ def _build_audio_events(
             for name in sample_names:
                 sample = _audio_sample(name, assets, voice_strings)
                 identity = (
-                    str(sample.asset["id"])
-                    if sample.asset is not None
-                    else sample.name.casefold()
+                    str(sample.asset["id"]) if sample.asset is not None else sample.name.casefold()
                 )
                 position = positions.get(identity)
                 if position is None:
@@ -2705,9 +2864,8 @@ def _build_eva_events(
     entities: tuple[GameEntity, ...] = (),
 ) -> tuple[MediaAssociation, ...]:
     associations = []
-    entities_by_id = {entity.id.casefold(): entity for entity in entities}
     for event, values in sections.items():
-        fallback_voice_text = _eva_event_voice_text(event, values, entities_by_id)
+        fallback_voice_text = _eva_event_voice_text(event, values)
         for faction, fields in (
             ("allied", ("allied",)),
             ("soviet", ("soviet", "russian")),
@@ -2715,9 +2873,7 @@ def _build_eva_events(
         ):
             sample_names = tuple(
                 dict.fromkeys(
-                    sample_name
-                    for field in fields
-                    for sample_name in _tokens(values.get(field))
+                    sample_name for field in fields for sample_name in _tokens(values.get(field))
                 )
             )
             for sample_name in sample_names:
@@ -2739,37 +2895,26 @@ def _build_eva_events(
 def _eva_event_voice_text(
     event: str,
     values: dict[str, str],
-    entities_by_id: dict[str, GameEntity],
 ) -> VoiceText | None:
     configured = values.get("text")
     if configured:
         return VoiceText(f"EVA:{event}", configured, configured, None)
+    return None
 
+
+def _eva_event_entity(
+    event: str,
+    entities_by_id: dict[str, GameEntity],
+) -> GameEntity | None:
     match = re.match(r"unit_(?:eva|sofia)_(.+)$", event, re.IGNORECASE)
     if match is None:
         return None
-    unit_key = match.group(1).casefold()
-    static_text = _EVA_UNIT_STATIC_TEXT.get(unit_key)
-    if static_text is not None:
-        original_text, localized_text = static_text
-        return VoiceText(
-            f"EVA:{event}",
-            localized_text,
-            original_text,
-            localized_text,
-        )
-    entity_id = _EVA_UNIT_ENTITY_IDS.get(unit_key)
-    entity = entities_by_id.get((entity_id or "").casefold())
-    if entity is None:
-        return None
-    localized_text = entity.display_name if entity.ui_name_resolved else None
-    original_text = entity.internal_name or entity.id
-    return VoiceText(
-        entity.ui_name or f"EVA:{event}",
-        localized_text or original_text,
-        original_text,
-        localized_text,
+    entity_id = (
+        "SENGINEER"
+        if event.casefold() == "unit_sofia_engineer"
+        else _EVA_UNIT_ENTITY_IDS.get(match.group(1).casefold())
     )
+    return entities_by_id.get((entity_id or "").casefold())
 
 
 def _body_sequence_preview_frame(
@@ -2802,9 +2947,7 @@ def _body_sequence_preview_frame(
     frame_count = max(1, playback.frame_count or 1)
     facing_offset = (facing % 8) * playback.facing_step if playback.facing_step else 0
     return (
-        playback.start_frame
-        + facing_offset
-        + (frame % frame_count) * max(1, playback.frame_step)
+        playback.start_frame + facing_offset + (frame % frame_count) * max(1, playback.frame_step)
     )
 
 
@@ -2918,15 +3061,9 @@ def _resolve_media(
                         tuple(
                             sample
                             for animation in animations
-                            for sample in _animation_samples(
-                                animation, art_sections, assets
-                            )
+                            for sample in _animation_samples(animation, art_sections, assets)
                         ),
-                        role=(
-                            "destruction"
-                            if dependency.slot == "destruction"
-                            else "weapon"
-                        ),
+                        role=("destruction" if dependency.slot == "destruction" else "weapon"),
                         rule_field="WeaponType.Anim",
                     )
                 )
@@ -2968,15 +3105,9 @@ def _resolve_media(
                         tuple(
                             sample
                             for animation in animations
-                            for sample in _animation_samples(
-                                animation, art_sections, assets
-                            )
+                            for sample in _animation_samples(animation, art_sections, assets)
                         ),
-                        role=(
-                            "destruction"
-                            if dependency.slot == "destruction"
-                            else "impact"
-                        ),
+                        role=("destruction" if dependency.slot == "destruction" else "impact"),
                         selection=(
                             "random"
                             if random_selection
@@ -3018,9 +3149,7 @@ def _resolve_media(
                 )
             )
             debris_rule_field = (
-                "TechnoType.DebrisAnims"
-                if debris_animations
-                else "General.MetallicDebris"
+                "TechnoType.DebrisAnims" if debris_animations else "General.MetallicDebris"
             )
             debris_samples = tuple(
                 sample
@@ -3058,11 +3187,7 @@ def _resolve_media(
                         animation,
                         art_sections,
                         assets,
-                        palette=(
-                            "unit"
-                            if role in {"construction", "operation"}
-                            else None
-                        ),
+                        palette=("unit" if role in {"construction", "operation"} else None),
                         force_shadow=role == "construction",
                     ),
                     role=role,
@@ -3149,7 +3274,14 @@ def _animation_samples(
     image = values.get("image") or reference
     names = (image,) if "." in image else (f"{image}.shp", f"{image}.hva")
     asset = _find_asset(assets, names, ("shp", "hva", "video"))
-    playback = _art_animation_playback(values)
+    playback = _art_animation_playback(
+        values,
+        end_is_frame_count=_art_end_is_frame_count(reference, values, art_sections),
+    )
+    if playback is not None and playback.frame_count is None:
+        sibling_count = _art_sibling_frame_count(reference, values, art_sections)
+        if sibling_count is not None:
+            playback = replace(playback, frame_count=sibling_count)
     if force_shadow:
         playback = replace(playback or AnimationPlayback(), shadow=True)
     direction_match = re.search(r"-(NE|SE|SW|NW|N|E|S|W)$", reference, re.IGNORECASE)
@@ -3174,16 +3306,67 @@ def _entity_animation_role(field: str) -> str | None:
     normalized = field.casefold()
     if normalized == "buildup":
         return "construction"
-    if normalized.startswith("anim"):
-        return None
-    if normalized.endswith("anim") or re.fullmatch(
-        r"(?:active|idle|production|special)anim(?:two|three|four)", normalized
+    if re.fullmatch(
+        r"(?:active|idle|special|super)anim(?:two|three|four)?"
+        r"|productionanim"
+        r"|deployinganim|roofdeployinganim|underdooranim|underroofdooranim",
+        normalized,
     ):
         return "operation"
     return None
 
 
-def _art_animation_playback(values: dict[str, str]) -> AnimationPlayback | None:
+def _art_end_is_frame_count(
+    reference: str,
+    values: dict[str, str],
+    art_sections: dict[str, dict[str, str]],
+) -> bool:
+    """Detect the retail repair-bay convention where End stores a frame count.
+
+    Most ART animations use End as an inclusive source-frame index. The retail
+    repair bays explicitly use it as a count; their normal and damaged sections
+    share one image, and at least one sibling consequently has End <= Start.
+    """
+    if "end" not in values or "loopend" in values:
+        return False
+    image = (values.get("image") or reference).casefold()
+    for section_name, candidate in art_sections.items():
+        if (candidate.get("image") or section_name).casefold() != image:
+            continue
+        if "end" not in candidate or "loopend" in candidate:
+            continue
+        start = _integer(candidate.get("start"), 0) or 0
+        end = _integer(candidate.get("end"))
+        if start > 0 and end is not None and end <= start:
+            return True
+    return False
+
+
+def _art_sibling_frame_count(
+    reference: str,
+    values: dict[str, str],
+    art_sections: dict[str, dict[str, str]],
+) -> int | None:
+    """Bound range-less animations before the next state sharing their image."""
+    image = (values.get("image") or reference).casefold()
+    start = _integer(values.get("start"), 0) or 0
+    later_starts = []
+    for section_name, candidate in art_sections.items():
+        if (candidate.get("image") or section_name).casefold() != image:
+            continue
+        candidate_start = _integer(candidate.get("start"), 0) or 0
+        if candidate_start > start:
+            later_starts.append(candidate_start)
+    if not later_starts:
+        return None
+    return min(later_starts) - start
+
+
+def _art_animation_playback(
+    values: dict[str, str],
+    *,
+    end_is_frame_count: bool = False,
+) -> AnimationPlayback | None:
     playback_fields = {
         "start",
         "end",
@@ -3192,14 +3375,20 @@ def _art_animation_playback(values: dict[str, str]) -> AnimationPlayback | None:
         "loopcount",
         "rate",
         "shadow",
+        "reverse",
     }
     if not playback_fields.intersection(values):
         return None
     start = _integer(values.get("start"), 0) or 0
     loop_start = _integer(values.get("loopstart"))
     loop_end = _integer(values.get("loopend"))
-    end = loop_end if loop_end is not None else _integer(values.get("end"))
-    frame_count = end - start + 1 if end is not None and end >= start else None
+    end = _integer(values.get("end"))
+    if loop_end is not None:
+        frame_count = loop_end - start + 1 if loop_end >= start else None
+    elif end is not None and end_is_frame_count:
+        frame_count = max(1, end)
+    else:
+        frame_count = end - start + 1 if end is not None and end >= start else None
     return AnimationPlayback(
         start_frame=max(0, start),
         frame_count=frame_count,
@@ -3208,6 +3397,7 @@ def _art_animation_playback(values: dict[str, str]) -> AnimationPlayback | None:
         loop_end=loop_end,
         loop_count=_integer(values.get("loopcount")),
         shadow=_yes(values.get("shadow")),
+        reverse=_yes(values.get("reverse")),
     )
 
 
@@ -3303,7 +3493,10 @@ def _type_values(section: dict[str, str]) -> list[str]:
 
 def _resolve_components(
     assets: _AssetIndex,
+    kind: str,
+    entity_id: str,
     image: str,
+    rules: dict[str, str],
     art: dict[str, str],
     voxel: bool,
     has_turret: bool,
@@ -3311,9 +3504,20 @@ def _resolve_components(
     if _is_null_image(image):
         return (), False
     body_vxl = _find_asset(assets, (f"{image}.vxl",), ("vxl",))
-    detected_voxel = body_vxl is not None
+    body_shp = _find_asset(
+        assets,
+        _theater_shp_names(image, _yes(art.get("newtheater"))),
+        ("shp",),
+    )
+    voxel_turret = (
+        kind == "building"
+        and _yes(rules.get("turretanimisvoxel"))
+        and bool(rules.get("turretanim"))
+    )
+    prefer_shp_body = voxel_turret and body_shp is not None
+    resolved_voxel = (voxel or body_vxl is not None) and not prefer_shp_body
     components = []
-    if voxel or detected_voxel:
+    if resolved_voxel:
         components.append(EntityComponent("body", f"{image}.vxl", body_vxl))
         components.append(
             EntityComponent(
@@ -3339,13 +3543,53 @@ def _resolve_components(
             EntityComponent(
                 "body",
                 expected,
-                _find_asset(
-                    assets,
-                    _theater_shp_names(image, _yes(art.get("newtheater"))),
-                    ("shp",),
-                ),
+                body_shp,
             )
         )
+        if kind == "building":
+            bib_shape = art.get("bibshape")
+            if bib_shape:
+                expected = f"{bib_shape}.shp"
+                components.append(
+                    EntityComponent(
+                        "bib",
+                        expected,
+                        _find_asset(assets, (expected,), ("shp",)),
+                    )
+                )
+            if voxel_turret:
+                turret_name = str(rules["turretanim"])
+                turret_expected = f"{turret_name}.vxl"
+                components.append(
+                    EntityComponent(
+                        "turret",
+                        turret_expected,
+                        _find_asset(assets, (turret_expected,), ("vxl",)),
+                    )
+                )
+                components.append(
+                    EntityComponent(
+                        "turret_hva",
+                        f"{turret_name}.hva",
+                        _find_asset(assets, (f"{turret_name}.hva",), ("hva",)),
+                    )
+                )
+                barrel_names = tuple(dict.fromkeys((f"{entity_id}BARL", f"{turret_name}BARL")))
+                barrel_asset = _find_asset(
+                    assets,
+                    tuple(f"{name}.vxl" for name in barrel_names),
+                    ("vxl",),
+                )
+                if barrel_asset is not None:
+                    barrel_name = str(barrel_asset["display_name"]).rsplit(".", 1)[0]
+                    components.append(EntityComponent("barrel", f"{barrel_name}.vxl", barrel_asset))
+                    components.append(
+                        EntityComponent(
+                            "barrel_hva",
+                            f"{barrel_name}.hva",
+                            _find_asset(assets, (f"{barrel_name}.hva",), ("hva",)),
+                        )
+                    )
 
     for role, field in (("cameo", "cameo"), ("alt_cameo", "altcameo")):
         value = art.get(field)
@@ -3354,7 +3598,7 @@ def _resolve_components(
             components.append(
                 EntityComponent(role, expected, _find_asset(assets, (expected,), ("shp",)))
             )
-    return tuple(components), detected_voxel
+    return tuple(components), resolved_voxel
 
 
 def _is_null_image(image: str) -> bool:
@@ -3420,9 +3664,7 @@ def _resolve_dependencies(
 
     death_weapons = _references(entity_rules.get("deathweapon"))
     if not death_weapons and _yes(entity_rules.get("explodes")):
-        death_weapons = _references(
-            sections.get("combatdamage", {}).get("deathweapon")
-        )
+        death_weapons = _references(sections.get("combatdamage", {}).get("deathweapon"))
     for weapon_id in death_weapons:
         resolve_weapon("destruction", weapon_id)
     return tuple(dependencies)
@@ -3435,9 +3677,7 @@ def _find_asset(
 ) -> dict[str, Any] | None:
     for name in names:
         candidates = [
-            asset
-            for asset in assets.by_name.get(name.casefold(), ())
-            if asset["format"] in formats
+            asset for asset in assets.by_name.get(name.casefold(), ()) if asset["format"] in formats
         ]
         if candidates:
             return max(candidates, key=_asset_precedence)
@@ -3510,21 +3750,14 @@ def _entity_usage(kind: str, values: dict[str, str]) -> str:
     can_build = bool(
         owners
         and values.get("cost")
-        and (
-            tech_level is not None
-            and tech_level >= 0
-            or deployed_construction_yard
-        )
+        and (tech_level is not None and tech_level >= 0 or deployed_construction_yard)
     )
     if kind == "building":
         if can_build:
             return "buildable"
         if _yes(values.get("needsengineer")) or _yes(values.get("capturable")):
             return "tech"
-        if any(
-            _yes(values.get(field))
-            for field in ("civilian", "insignificant", "nominal")
-        ):
+        if any(_yes(values.get(field)) for field in ("civilian", "insignificant", "nominal")):
             return "civilian"
         return "scenario"
     if kind == "infantry":
@@ -3560,9 +3793,7 @@ def _references(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
     return tuple(
-        item
-        for raw in value.split(",")
-        if (item := raw.strip()) and item.casefold() != "none"
+        item for raw in value.split(",") if (item := raw.strip()) and item.casefold() != "none"
     )
 
 
@@ -3570,9 +3801,7 @@ def _tokens(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
     return tuple(
-        token
-        for token in re.split(r"[,\s]+", value)
-        if token and token.casefold() != "none"
+        token for token in re.split(r"[,\s]+", value) if token and token.casefold() != "none"
     )
 
 
@@ -3616,11 +3845,7 @@ def _entity_search_text(entity: GameEntity) -> str:
             ),
             *(association.event for association in entity.media),
             *(sample.name for association in entity.media for sample in association.samples),
-            *(
-                sample.text or ""
-                for association in entity.media
-                for sample in association.samples
-            ),
+            *(sample.text or "" for association in entity.media for sample in association.samples),
         )
     ).casefold()
 
@@ -3659,14 +3884,9 @@ def _media_search_text(item: dict[str, object]) -> str:
             *(str(value) for value in item["slots"]),  # type: ignore[union-attr]
             *(str(value) for value in item["countries"]),  # type: ignore[union-attr]
             *(str(value) for value in item["sides"]),  # type: ignore[union-attr]
+            *((str(value) for value in mission.values()) if isinstance(mission, dict) else ()),
             *(
-                (str(value) for value in mission.values())
-                if isinstance(mission, dict)
-                else ()
-            ),
-            *(
-                f"{entity['id']} {entity['display_name']} "
-                f"{_media_entity_affiliation_name(entity)}"
+                f"{entity['id']} {entity['display_name']} {_media_entity_affiliation_name(entity)}"
                 for entity in entities  # type: ignore[union-attr]
             ),
         )
@@ -3704,9 +3924,7 @@ def _media_search_aliases(item: dict[str, object]) -> dict[str, list[str]]:
     return {"pinyin_compact": compact, "pinyin_initials": initials}
 
 
-def _localized_media_item(
-    item: dict[str, object], language: GameLanguage
-) -> dict[str, object]:
+def _localized_media_item(item: dict[str, object], language: GameLanguage) -> dict[str, object]:
     entities = item["entities"]
     localized = {
         **item,
@@ -3732,16 +3950,10 @@ def _localized_media_item(
 
 def _media_entity_affiliation_name(entity: dict[str, object]) -> str:
     affiliation = entity.get("affiliation")
-    return (
-        str(affiliation.get("display_name") or "")
-        if isinstance(affiliation, dict)
-        else ""
-    )
+    return str(affiliation.get("display_name") or "") if isinstance(affiliation, dict) else ""
 
 
-def _localized_media_entity(
-    entity: dict[str, object], language: GameLanguage
-) -> dict[str, object]:
+def _localized_media_entity(entity: dict[str, object], language: GameLanguage) -> dict[str, object]:
     affiliation = entity.get("affiliation")
     localized_affiliation = None
     if isinstance(affiliation, dict):

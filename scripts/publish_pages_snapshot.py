@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -31,7 +32,9 @@ AUTH_HEADER = "Author" "ization"
 BEARER_PREFIX = "Bear" "er "
 MAX_API_RESPONSE_BYTES = 4 * 1024 * 1024
 PART_BYTES = 8 * 1024 * 1024
-UPLOAD_TIMEOUT_SECONDS = 10 * 60
+UPLOAD_TIMEOUT_SECONDS = 3 * 60
+UPLOAD_ATTEMPTS = 3
+UPLOAD_RETRY_DELAY_SECONDS = 3
 _REPOSITORY_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
 )
@@ -253,40 +256,62 @@ def _upload_asset(
         executable = shutil.which("curl")
     if executable is None:
         raise SnapshotPublishError("发布 Pages 数据需要 curl")
-    try:
-        completed = subprocess.run(
-            [
-                executable,
-                "--fail",
-                "--show-error",
-                "--http1.1",
-                "--connect-timeout",
-                "20",
-                "--max-time",
-                str(UPLOAD_TIMEOUT_SECONDS),
-                "--progress-bar",
-                "-X",
-                "POST",
-                "-H",
-                "Accept: application/vnd.github+json",
-                "-H",
-                f"{AUTH_HEADER}: {BEARER_PREFIX}{auth_value}",
-                "-H",
-                f"X-GitHub-Api-Version: {GITHUB_API_VERSION}",
-                "-H",
-                "Content-Type: application/zip",
-                "--data-binary",
-                f"@{archive}",
-                url,
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            timeout=UPLOAD_TIMEOUT_SECONDS + 60,
+    command = [
+        executable,
+        "--fail",
+        "--show-error",
+        "--http1.1",
+        "--connect-timeout",
+        "15",
+        "--max-time",
+        str(UPLOAD_TIMEOUT_SECONDS),
+        "--progress-bar",
+        "-X",
+        "POST",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "-H",
+        f"{AUTH_HEADER}: {BEARER_PREFIX}{auth_value}",
+        "-H",
+        f"X-GitHub-Api-Version: {GITHUB_API_VERSION}",
+        "-H",
+        "Content-Type: application/zip",
+        "--data-binary",
+        f"@{archive}",
+        url,
+    ]
+    completed: subprocess.CompletedProcess[bytes] | None = None
+    last_error: BaseException | None = None
+    for attempt in range(1, UPLOAD_ATTEMPTS + 1):
+        print(
+            f"[pages] 分片上传尝试 {attempt}/{UPLOAD_ATTEMPTS}，"
+            f"单次最长 {UPLOAD_TIMEOUT_SECONDS} 秒",
+            file=sys.stderr,
+            flush=True,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise SnapshotPublishError(f"GitHub 数据上传失败：{type(error).__name__}") from error
-    if completed.returncode != 0:
-        raise SnapshotPublishError(f"GitHub 数据上传失败：curl {completed.returncode}")
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                stdout=subprocess.PIPE,
+                timeout=UPLOAD_TIMEOUT_SECONDS + 30,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            last_error = error
+            completed = None
+        if completed is not None and completed.returncode == 0:
+            break
+        if completed is not None:
+            last_error = RuntimeError(f"curl {completed.returncode}")
+        if attempt < UPLOAD_ATTEMPTS:
+            time.sleep(UPLOAD_RETRY_DELAY_SECONDS)
+    if completed is None or completed.returncode != 0:
+        detail = type(last_error).__name__ if last_error else "unknown"
+        if isinstance(last_error, RuntimeError):
+            detail = str(last_error)
+        raise SnapshotPublishError(
+            f"GitHub 数据上传在 {UPLOAD_ATTEMPTS} 次尝试后失败：{detail}"
+        ) from last_error
     if len(completed.stdout) > MAX_API_RESPONSE_BYTES:
         raise SnapshotPublishError("GitHub 上传响应超过安全限制")
     try:
@@ -392,14 +417,26 @@ def publish_snapshot(
                 file=sys.stderr,
                 flush=True,
             )
-            uploaded = _upload_asset(
-                (
-                    f"{GITHUB_UPLOAD_ROOT}/repos/{quote(repository, safe='/')}/releases/"
-                    f"{release['id']}/assets?name={quote(name, safe='')}"
-                ),
-                archive=part_path,
-                auth_value=auth_value,
-            )
+            try:
+                uploaded = _upload_asset(
+                    (
+                        f"{GITHUB_UPLOAD_ROOT}/repos/{quote(repository, safe='/')}/releases/"
+                        f"{release['id']}/assets?name={quote(name, safe='')}"
+                    ),
+                    archive=part_path,
+                    auth_value=auth_value,
+                )
+            except SnapshotPublishError:
+                refreshed = _request_json(release_url, auth_value=auth_value)
+                recovered = _find_asset(refreshed or {}, name)
+                if recovered is None:
+                    raise
+                print(
+                    f"[pages] 已从 Release 恢复上传结果 {index}/{len(parts)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                uploaded = recovered
             if uploaded.get("size") != expected_size:
                 raise SnapshotPublishError(f"GitHub Release 分片大小不一致：{name}")
             digest = str(uploaded.get("digest") or "")

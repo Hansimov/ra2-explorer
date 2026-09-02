@@ -23,6 +23,7 @@ def _snapshot_archive(path: Path) -> Path:
         "catalog/media.zh-CN.json": b"{}",
         "catalog/media.zh-TW.json": b"{}",
         "previews/entity-atlases/vehicle/0-r4.webp": b"webp",
+        "previews/entity-search-atlases/1-r4.webp": b"search-webp",
         "audio/example.ogg": b"audio",
         "assets/example.json": b"{}",
         "entities/zh-CN/example.json": b"{}",
@@ -74,6 +75,7 @@ def test_prepare_pages_cdn_package_keeps_only_startup_data(tmp_path: Path) -> No
     assert lock["snapshot_id"] == "snapshot-test"
     assert (staging / "data/catalog/entities.zh-CN.json").is_file()
     assert (staging / "data/previews/entity-atlases/vehicle/0-r4.webp").is_file()
+    assert (staging / "data/previews/entity-search-atlases/1-r4.webp").is_file()
     assert not (staging / "data/audio/example.ogg").exists()
     assert not (staging / "data/assets/example.json").exists()
     package = json.loads((staging / "package.json").read_text(encoding="utf-8"))

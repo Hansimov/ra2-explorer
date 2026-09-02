@@ -25,6 +25,23 @@ AUDIO_TRANSCRIPT_URL = (
 AUDIO_TRANSCRIPT_SOURCE_URL = (
     "https://forums.cncnet.org/topic/12109-in-game-audio-database-transcript/"
 )
+BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH = Path(__file__).with_name("data") / "unit-intel-transcript.json"
+
+# The community workbook rotates both retail harvester voice groups by one row.
+# These filename-to-line bindings were verified against the decoded English BAG
+# samples; keep the override in code so a future reference sync cannot restore
+# the bad alignment.
+_VERIFIED_AUDIO_TRANSCRIPT_CORRECTIONS = {
+    "vchrhaa": "You'll get the cash in a flash",
+    "vchrhab": "It's in the bank",
+    "vchrhac": "Mining",
+    "vchrhad": "Ah, there it is",
+    "vchrhae": "Rolling with a chrono convoy",
+    "vwarhaa": "Equal share for everyone",
+    "vwarhab": "Let's keep the ore moving",
+    "vwarhac": "Da, we will need that",
+    "vwarhad": "Looks like good place to mine",
+}
 
 BUILTIN_NAMES = (
     "ra2.mix",
@@ -123,6 +140,11 @@ def load_audio_transcript(
             pass
     for supplement_path in supplement_paths:
         entries.update(_load_audio_transcript_supplement(supplement_path))
+    for file_id, text in _VERIFIED_AUDIO_TRANSCRIPT_CORRECTIONS.items():
+        current = entries.get(file_id)
+        if current is None:
+            continue
+        entries[file_id] = {**current, "text": text, "original_text": text}
     return entries
 
 
@@ -215,15 +237,9 @@ def _parse_audio_transcript(content: bytes) -> dict[str, dict[str, str]]:
         else:
             shared = ["".join(node.itertext()) for node in shared_root]
         book_root = ElementTree.fromstring(workbook.read("xl/workbook.xml"))
-        relations_root = ElementTree.fromstring(
-            workbook.read("xl/_rels/workbook.xml.rels")
-        )
-        targets = {
-            node.attrib["Id"]: node.attrib["Target"] for node in relations_root
-        }
-        relation_key = (
-            "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
-        )
+        relations_root = ElementTree.fromstring(workbook.read("xl/_rels/workbook.xml.rels"))
+        targets = {node.attrib["Id"]: node.attrib["Target"] for node in relations_root}
+        relation_key = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
         sheets = book_root.findall("m:sheets/m:sheet", namespace)
         selected = next(
             (sheet for sheet in sheets if sheet.attrib.get("name") == "Complete List"),
@@ -293,6 +309,7 @@ __all__ = [
     "CNC_FORMATS_REVISION",
     "AUDIO_TRANSCRIPT_SOURCE_URL",
     "AUDIO_TRANSCRIPT_URL",
+    "BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH",
     "load_audio_transcript",
     "load_known_names",
     "reference_status",

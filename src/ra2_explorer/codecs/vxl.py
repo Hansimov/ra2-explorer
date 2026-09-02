@@ -289,6 +289,29 @@ def render_vxl_composite(
     vpl: VplFile | None = None,
     scale: int = 4,
 ) -> Image.Image:
+    image, _ = render_vxl_composite_with_anchor(
+        parts,
+        palette=palette,
+        frame=frame,
+        facing=facing,
+        player_color=player_color,
+        vpl=vpl,
+        scale=scale,
+    )
+    return image
+
+
+def render_vxl_composite_with_anchor(
+    parts: Sequence[VxlRenderPart],
+    *,
+    palette: Palette | None = None,
+    frame: int = 0,
+    facing: int = 0,
+    player_color: str | None = None,
+    vpl: VplFile | None = None,
+    scale: int = 4,
+) -> tuple[Image.Image, tuple[int, int]]:
+    """Render a VXL composite and return the projected world-origin anchor."""
     world_voxels = _collect_world_voxels(
         parts,
         palette=palette,
@@ -297,7 +320,7 @@ def render_vxl_composite(
         player_color=player_color,
     )
     if not world_voxels:
-        return Image.new("RGBA", (320, 180), (0, 0, 0, 0))
+        return Image.new("RGBA", (320, 180), (0, 0, 0, 0)), (160, 90)
 
     requested = max(1, min(scale, 12))
 
@@ -344,10 +367,7 @@ def render_vxl_composite(
         cube_height = max(1, round(voxel.size * 24 * pixel_scale))
         center_x = round((voxel.x - voxel.y) * 24 * pixel_scale + padding - min_x)
         center_y = round(
-            (voxel.x + voxel.y) * 12 * pixel_scale
-            - voxel.z * 24 * pixel_scale
-            + padding
-            - min_y
+            (voxel.x + voxel.y) * 12 * pixel_scale - voxel.z * 24 * pixel_scale + padding - min_y
         )
         red, green, blue = _voxel_rgb(voxel, vpl)
         top = _shade((red, green, blue), 1.12)
@@ -374,7 +394,7 @@ def render_vxl_composite(
         draw.polygon(left_points, fill=(*left, 255))
         draw.polygon(right_points, fill=(*right, 255))
         draw.polygon(top_points, fill=(*top, 255))
-    return image
+    return image, (round(padding - min_x), round(padding - min_y))
 
 
 def _collect_world_voxels(
@@ -446,10 +466,7 @@ def _surface_voxels(voxels: tuple[Voxel, ...]) -> tuple[Voxel, ...]:
     return tuple(
         voxel
         for voxel in voxels
-        if any(
-            (voxel.x + x, voxel.y + y, voxel.z + z) not in occupied
-            for x, y, z in offsets
-        )
+        if any((voxel.x + x, voxel.y + y, voxel.z + z) not in occupied for x, y, z in offsets)
     )
 
 
@@ -783,4 +800,5 @@ __all__ = [
     "build_vxl_scene",
     "parse_vxl",
     "render_vxl_composite",
+    "render_vxl_composite_with_anchor",
 ]

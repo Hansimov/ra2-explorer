@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from scripts.publish_pages_snapshot import (
     _data_manifest,
     _lock_manifest,
     _snapshot_manifest,
+    _upload_asset,
     _validate_tag,
     build_parser,
 )
@@ -55,3 +57,38 @@ def test_pages_publish_rejects_application_version_tag() -> None:
 def test_pages_publish_requires_explicit_data_tag() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["snapshot.zip"])
+
+
+def test_pages_upload_retries_bounded_curl_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive = tmp_path / "part01"
+    archive.write_bytes(b"payload")
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr("scripts.publish_pages_snapshot.shutil.which", lambda _name: "curl")
+    monkeypatch.setattr("scripts.publish_pages_snapshot.time.sleep", lambda _seconds: None)
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(command)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(command, 28, stdout=b"")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=b'{"size":7,"digest":"sha256:test"}',
+        )
+
+    monkeypatch.setattr("scripts.publish_pages_snapshot.subprocess.run", fake_run)
+
+    uploaded = _upload_asset(
+        "https://uploads.github.com/example",
+        archive=archive,
+        auth_value="test-token",
+    )
+
+    assert uploaded["size"] == 7
+    assert len(calls) == 2
+    assert calls[0][calls[0].index("--max-time") + 1] == "180"
+    assert calls[0][calls[0].index("--connect-timeout") + 1] == "15"

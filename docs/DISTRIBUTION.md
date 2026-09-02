@@ -29,16 +29,12 @@
 | --- | ---: | ---: |
 | 解压目录（210 个文件） | 59,142,583 | 56.4 MiB |
 | `RA2-Explorer-Web-x64.zip` | 35,494,443 | 33.9 MiB |
-| Pages 固定数据 ZIP（v0.12.3） | 80,523,928 | 76.8 MiB |
-| Pages 解包数据（v0.12.3） | 146,746,567 | 140.0 MiB |
-| npm/jsDelivr 高频数据（解包） | 7,390,848 | 7.0 MiB |
-| npm 高频数据 tarball | 1,821,540 | 1.7 MiB |
 
-具体 Release 可能因 Python、依赖或压缩器小幅变化。普通本地用户不会下载或复制数百 MiB 的 MIX；首次导入直接关联本机安装。Pages 访客也不会下载数据 ZIP，而是按页面、预取队列和用户操作请求静态文件。
+具体 Release 可能因 Python、依赖或压缩器小幅变化。普通本地用户不会下载或复制数百 MiB 的 MIX；首次导入直接关联本机安装。Pages 数据的当前体积、访问流量和 CDN 子集只在 [GitHub Pages 说明](GITHUB_PAGES.md) 维护，精确字节数与摘要以两个锁定清单为准。Pages 访客不会下载数据 ZIP，而是按页面、预取队列和用户操作请求静态文件。
 
 ## 大文件隔离
 
-主分支只追踪代码、`packaging\pages-data.json` 和 `packaging\pages-cdn.json`。Pages 完整 ZIP 以 8 MiB 分片存放在独立 GitHub 数据 Release；锁定清单固定 tag、每片大小与 SHA-256，以及合并后整包大小与 SHA-256。高频清单、目录和卡片图集固定到 npm 精确版本并由 jsDelivr 分发。浏览器只请求所需文件，CDN 失败时回退 Pages 同源副本。`.ra2pack`、游戏文件和本地发行输出均位于被 Git 忽略的目录。
+主分支只追踪代码、`packaging\pages-data.json` 和 `packaging\pages-cdn.json`。Pages 完整 ZIP 以 8 MiB 分片存放在独立 GitHub 数据 Release；锁定清单固定 tag、每片大小与 SHA-256，以及合并后整包大小与 SHA-256。高频清单、目录、卡片图集和搜索小图图集固定到 npm 精确版本并由 jsDelivr 分发。浏览器只请求所需文件，CDN 失败时回退 Pages 同源副本。`.ra2pack`、游戏文件和本地发行输出均位于被 Git 忽略的目录。
 
 ## 自动发布
 

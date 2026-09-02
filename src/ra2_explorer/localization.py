@@ -12,6 +12,7 @@ GameLanguage = Literal["zh-CN", "zh-TW"]
 DEFAULT_GAME_LANGUAGE: GameLanguage = "zh-CN"
 
 _converters = threading.local()
+_SEARCH_CHARACTER_EQUIVALENTS = str.maketrans({"砲": "炮"})
 
 
 def localize_game_text(value: str | None, language: GameLanguage) -> str | None:
@@ -21,8 +22,8 @@ def localize_game_text(value: str | None, language: GameLanguage) -> str | None:
 
 
 def localized_search_match(query: str, text: str) -> bool:
-    haystack = text.casefold()
-    return any(variant in haystack for variant in _query_variants(query))
+    haystack = _canonical_search_text(text)
+    return any(_canonical_search_text(variant) in haystack for variant in _query_variants(query))
 
 
 def localized_fuzzy_search_match(query: str, text: str) -> bool:
@@ -36,7 +37,7 @@ def localized_fuzzy_search_match(query: str, text: str) -> bool:
         haystack = _normalize_search_text(text)
         if len(haystack) > max(64, len(needle) * 8):
             continue
-        if _bounded_subsequence(needle, haystack):
+        if _bounded_subsequence(needle, haystack) or _nearby_single_edit(needle, haystack):
             return True
     return False
 
@@ -80,13 +81,16 @@ def localized_mixed_search_match(query: str, *values: str | None) -> bool:
 
 
 def _normalize_search_text(value: str) -> str:
-    return "".join(character for character in value.casefold() if character.isalnum())
+    return "".join(character for character in _canonical_search_text(value) if character.isalnum())
+
+
+def _canonical_search_text(value: str) -> str:
+    return value.casefold().translate(_SEARCH_CHARACTER_EQUIVALENTS)
 
 
 def _search_terms(value: str) -> tuple[str, ...]:
     return tuple(
-        match.group(0).casefold()
-        for match in re.finditer(r"[\u3400-\u9fff]+|[A-Za-z0-9]+", value)
+        match.group(0).casefold() for match in re.finditer(r"[\u3400-\u9fff]+|[A-Za-z0-9]+", value)
     )
 
 
@@ -108,6 +112,47 @@ def _bounded_subsequence(needle: str, haystack: str) -> bool:
                 return True
         first = haystack.find(needle[0], first + 1)
     return False
+
+
+def _nearby_single_edit(needle: str, haystack: str) -> bool:
+    has_cjk = any("\u3400" <= character <= "\u9fff" for character in needle)
+    if len(needle) < (3 if has_cjk else 5):
+        return False
+    for width in range(max(1, len(needle) - 1), len(needle) + 2):
+        for start in range(0, len(haystack) - width + 1):
+            if _single_edit_or_transposition(needle, haystack[start : start + width]):
+                return True
+    return False
+
+
+def _single_edit_or_transposition(left: str, right: str) -> bool:
+    if abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) == len(right):
+        differences = [
+            index for index, pair in enumerate(zip(left, right, strict=True)) if pair[0] != pair[1]
+        ]
+        if len(differences) <= 1:
+            return True
+        return (
+            len(differences) == 2
+            and differences[1] == differences[0] + 1
+            and left[differences[0]] == right[differences[1]]
+            and left[differences[1]] == right[differences[0]]
+        )
+    shorter, longer = (left, right) if len(left) < len(right) else (right, left)
+    mismatch = 0
+    short_index = 0
+    for long_index, character in enumerate(longer):
+        if short_index < len(shorter) and shorter[short_index] == character:
+            short_index += 1
+            continue
+        mismatch += 1
+        if mismatch > 1:
+            return False
+        if long_index == len(longer) - 1:
+            return True
+    return True
 
 
 @lru_cache(maxsize=2_048)

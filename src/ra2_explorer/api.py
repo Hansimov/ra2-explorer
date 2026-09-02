@@ -4,6 +4,7 @@ import io
 import json
 import math
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -48,6 +49,7 @@ from ra2_explorer.errors import AssetNotFoundError, InvalidFormatError, Ra2Explo
 from ra2_explorer.library import AssetReader, SourceLibrary
 from ra2_explorer.localization import DEFAULT_GAME_LANGUAGE, GameLanguage
 from ra2_explorer.reference_data import (
+    BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH,
     load_audio_transcript,
     load_known_names,
     reference_status,
@@ -117,6 +119,7 @@ class Services:
                 supplement_paths=(
                     settings.mission_audio_transcript_path,
                     settings.english_voice_transcript_path,
+                    BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH,
                 ),
             ),
         )
@@ -148,9 +151,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1_024)
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["*"] if current_settings.hosted else [
-            "127.0.0.1", "localhost", "[::1]", "testserver"
-        ],
+        allowed_hosts=["*"]
+        if current_settings.hosted
+        else ["127.0.0.1", "localhost", "[::1]", "testserver"],
     )
     app.add_middleware(
         CORSMiddleware,
@@ -288,9 +291,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         offset: int = Query(default=0, ge=0),
     ) -> dict[str, object]:
         selected_formats = tuple(
-            item.strip().casefold()
-            for item in (formats or "").split(",")
-            if item.strip()
+            item.strip().casefold() for item in (formats or "").split(",") if item.strip()
         )
         if len(selected_formats) > 20 or any(
             not item.replace("_", "").isalnum() for item in selected_formats
@@ -336,12 +337,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=100, ge=1, le=1_000),
         offset: int = Query(default=0, ge=0),
     ) -> dict[str, object]:
-        selected_kinds = tuple(dict.fromkeys(
-            value.strip() for value in (kinds or "").split(",") if value.strip()
-        ))
-        selected_usages = tuple(dict.fromkeys(
-            value.strip() for value in (usages or "").split(",") if value.strip()
-        ))
+        selected_kinds = tuple(
+            dict.fromkeys(value.strip() for value in (kinds or "").split(",") if value.strip())
+        )
+        selected_usages = tuple(
+            dict.fromkeys(value.strip() for value in (usages or "").split(",") if value.strip())
+        )
         if kind is not None and kind not in ENTITY_KINDS:
             raise HTTPException(status_code=422, detail="未知单位类型")
         if any(value not in ENTITY_KINDS for value in selected_kinds):
@@ -417,6 +418,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         palette_id: str | None = None,
         scale: int = Query(default=4, ge=1, le=12),
         thumbnail: bool = False,
+        compact: bool = False,
         effect_asset_id: str | None = None,
         effect_frame: int = Query(default=0, ge=0),
         effect_shadow_frame: int | None = Query(default=None, ge=0),
@@ -427,7 +429,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if body is None:
             raise HTTPException(status_code=409, detail="该单位没有可渲染的主体资产")
         player_color = _validated_player_color(player_color)
-        renderer_version = "shp-layers-v5" if body["format"] == "shp" else "vpl-body-v3"
+        renderer_version = "shp-layers-v9" if body["format"] == "shp" else "vpl-body-v3"
         artifact_path = _source_artifact_path(
             services,
             "previews",
@@ -440,6 +442,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             f"palette-{palette_id or 'auto'}",
             f"scale-{scale}",
             f"thumbnail-{thumbnail}",
+            f"compact-{compact}",
             f"effect-{effect_asset_id or 'none'}",
             f"effect-frame-{effect_frame}",
             f"effect-shadow-{effect_shadow_frame if effect_shadow_frame is not None else 'none'}",
@@ -493,15 +496,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     detail="只有 SHP 主体支持原始画布动画合成",
                 )
             effect_asset, effect_data = services.reader.read(effect_asset_id)
-            if (
-                effect_asset["source_id"] != body["source_id"]
-                or effect_asset["format"] != "shp"
-            ):
+            if effect_asset["source_id"] != body["source_id"] or effect_asset["format"] != "shp":
                 raise HTTPException(status_code=409, detail="动画资产不属于当前 SHP 单位")
             effect_sprite = parse_shp(effect_data)
             if effect_frame >= len(effect_sprite.frames) or (
-                effect_shadow_frame is not None
-                and effect_shadow_frame >= len(effect_sprite.frames)
+                effect_shadow_frame is not None and effect_shadow_frame >= len(effect_sprite.frames)
             ):
                 raise HTTPException(status_code=416, detail="动画帧编号超出范围")
             effect_palette = _select_palette(
@@ -516,9 +515,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             effect_main = effect_sprite.render(effect_frame, effect_palette, scale=scale)
             if effect_shadow_frame is not None:
-                shadow_layers.append(
-                    effect_sprite.render_shadow(effect_shadow_frame, scale=scale)
-                )
+                shadow_layers.append(effect_sprite.render_shadow(effect_shadow_frame, scale=scale))
             main_layers.append(effect_main)
         if shadow_layers or main_layers:
             base_size = image.size
@@ -529,11 +526,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 main_layers,
                 image.size,
             )
+        image, focus_bounds = _composite_building_voxel_turret(
+            services,
+            source_id,
+            semantic_entity,
+            image,
+            focus_bounds,
+            palette=palette,
+            frame=frame,
+            facing=facing,
+            player_color=player_color,
+            scale=scale,
+        )
         if thumbnail:
             image = _crop_transparent_preview(
                 image,
-                padding_ratio=0.42 if semantic_entity.kind == "infantry" else 0.08,
-                focus_bounds=focus_bounds,
+                padding_ratio=_entity_thumbnail_padding(semantic_entity, compact=compact),
+                focus_bounds=None if compact else focus_bounds,
             )
         output = io.BytesIO()
         image.save(output, format="PNG")
@@ -1026,6 +1035,10 @@ def _crop_transparent_preview(
     )
 
 
+def _entity_thumbnail_padding(entity: GameEntity, *, compact: bool) -> float:
+    return 0.08 if compact or entity.kind != "infantry" else 0.20
+
+
 def _default_entity_operation_samples(
     entity: GameEntity,
     *,
@@ -1033,8 +1046,25 @@ def _default_entity_operation_samples(
 ) -> tuple[MediaSample, ...]:
     samples: list[MediaSample] = []
     seen_assets: set[str] = set()
+    excluded_super_family = any(
+        association.kind == "animation"
+        and association.role == "operation"
+        and association.slot.casefold().startswith("superanim")
+        and any(
+            sample.asset and str(sample.asset["id"]) == excluded_asset_id
+            for sample in association.samples
+        )
+        for association in entity.media
+    )
     for association in entity.media:
         if association.kind != "animation" or association.role != "operation":
+            continue
+        slot = association.slot.casefold()
+        is_persistent = bool(
+            re.fullmatch(r"(?:active|idle)anim(?:two|three|four)?", slot)
+            or slot == "superanim"
+        )
+        if not is_persistent or (excluded_super_family and slot.startswith("superanim")):
             continue
         configured = next(
             (
@@ -1093,9 +1123,7 @@ def _render_entity_shp_layer(
             else None
         )
         shadow = (
-            sprite.render_shadow(shadow_frame, scale=scale)
-            if shadow_frame is not None
-            else None
+            sprite.render_shadow(shadow_frame, scale=scale) if shadow_frame is not None else None
         )
         return shadow, main
     except (OSError, Ra2ExplorerError, ValueError):
@@ -1171,10 +1199,7 @@ def _select_palette(
     palettes = services.database.palette_assets(str(asset["source_id"]))
     if palette_id:
         palette_asset = services.database.get_asset(palette_id)
-        if (
-            palette_asset["source_id"] != asset["source_id"]
-            or palette_asset["format"] != "pal"
-        ):
+        if palette_asset["source_id"] != asset["source_id"] or palette_asset["format"] != "pal":
             raise HTTPException(status_code=409, detail="调色板不属于当前资源目录")
         _, palette_data = services.reader.read(palette_id)
         return parse_palette(palette_data)
@@ -1211,8 +1236,7 @@ def _select_palette(
     preferred = (
         ["anim.pal", f"unit{theater}.pal", "unittem.pal"]
         if palette_kind == "animation"
-        else
-        [f"iso{theater}.pal", "isotem.pal", f"unit{theater}.pal", "unittem.pal"]
+        else [f"iso{theater}.pal", "isotem.pal", f"unit{theater}.pal", "unittem.pal"]
         if uses_iso_palette
         else [f"unit{theater}.pal", "unittem.pal", f"iso{theater}.pal", "isotem.pal"]
     )
@@ -1238,6 +1262,100 @@ def _alpha_composite_centered(layers: list[Image.Image]) -> Image.Image:
             ((width - layer.width) // 2, (height - layer.height) // 2),
         )
     return output
+
+
+def _alpha_composite_anchored(
+    base: Image.Image,
+    overlay: Image.Image,
+    *,
+    overlay_anchor: tuple[int, int],
+    target_anchor: tuple[int, int],
+    base_focus: tuple[int, int, int, int] | None,
+) -> tuple[Image.Image, tuple[int, int, int, int] | None]:
+    overlay_left = target_anchor[0] - overlay_anchor[0]
+    overlay_top = target_anchor[1] - overlay_anchor[1]
+    left = min(0, overlay_left)
+    top = min(0, overlay_top)
+    right = max(base.width, overlay_left + overlay.width)
+    bottom = max(base.height, overlay_top + overlay.height)
+    base_offset = (-left, -top)
+    overlay_offset = (overlay_left - left, overlay_top - top)
+    output = Image.new("RGBA", (right - left, bottom - top), (0, 0, 0, 0))
+    output.alpha_composite(base.convert("RGBA"), base_offset)
+    output.alpha_composite(overlay.convert("RGBA"), overlay_offset)
+
+    candidates: list[tuple[int, int, int, int]] = []
+    if base_focus is not None:
+        candidates.append(
+            (
+                base_focus[0] + base_offset[0],
+                base_focus[1] + base_offset[1],
+                base_focus[2] + base_offset[0],
+                base_focus[3] + base_offset[1],
+            )
+        )
+    overlay_bounds = overlay.getchannel("A").getbbox()
+    if overlay_bounds is not None:
+        candidates.append(
+            (
+                overlay_bounds[0] + overlay_offset[0],
+                overlay_bounds[1] + overlay_offset[1],
+                overlay_bounds[2] + overlay_offset[0],
+                overlay_bounds[3] + overlay_offset[1],
+            )
+        )
+    if not candidates:
+        return output, None
+    return output, (
+        min(bounds[0] for bounds in candidates),
+        min(bounds[1] for bounds in candidates),
+        max(bounds[2] for bounds in candidates),
+        max(bounds[3] for bounds in candidates),
+    )
+
+
+def _composite_building_voxel_turret(
+    services: Services,
+    source_id: str,
+    entity: GameEntity,
+    image: Image.Image,
+    focus_bounds: tuple[int, int, int, int] | None,
+    *,
+    palette: object,
+    frame: int,
+    facing: int,
+    player_color: str | None,
+    scale: int,
+) -> tuple[Image.Image, tuple[int, int, int, int] | None]:
+    turret = services.semantic.render_building_voxel_turret(
+        source_id,
+        entity,
+        palette=palette,
+        frame=frame,
+        facing=facing,
+        player_color=player_color,
+        scale=scale,
+    )
+    if turret is None:
+        return image, focus_bounds
+    turret_image, turret_origin = turret
+    return _alpha_composite_anchored(
+        image,
+        turret_image,
+        overlay_anchor=turret_origin,
+        target_anchor=(
+            image.width // 2 + _safe_int(entity.rules.get("turret_anim_x")) * scale,
+            image.height // 2 + _safe_int(entity.rules.get("turret_anim_y")) * scale,
+        ),
+        base_focus=focus_bounds,
+    )
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(str(value or "0").strip())
+    except ValueError:
+        return 0
 
 
 def _composite_focus_bounds(

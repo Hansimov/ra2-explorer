@@ -351,11 +351,21 @@ const mediaSlotLabels: Record<string, string> = {
   activeanimfour: "运转层四",
   productionanim: "生产",
   idleanim: "待机",
-  specialanim: "特殊",
-  deployinganim: "展开",
-  underdooranim: "门体",
+  idleanimtwo: "待机层二",
+  idleanimthree: "待机层三",
+  idleanimfour: "待机层四",
+  specialanim: "特殊动作开始",
+  specialanimtwo: "特殊动作持续",
+  specialanimthree: "特殊动作结束",
+  specialanimfour: "特殊动作附加",
+  superanim: "未充能待机",
+  superanimtwo: "充能启动",
+  superanimthree: "充能就绪",
+  superanimfour: "发射后复位",
+  deployinganim: "生产展开",
+  underdooranim: "下层门体",
   roofdeployinganim: "屋顶展开",
-  underroofdooranim: "屋顶门",
+  underroofdooranim: "屋顶门体",
   bibshape: "地基",
   taunt: "多人嘲讽",
   ambient: "场景播报",
@@ -495,8 +505,23 @@ function ruleFieldName(ruleField: string | null) {
     "arttype.activeanimtwo": "运行层二",
     "arttype.activeanimthree": "运行层三",
     "arttype.activeanimfour": "运行层四",
+    "arttype.idleanim": "待机层一",
+    "arttype.idleanimtwo": "待机层二",
+    "arttype.idleanimthree": "待机层三",
+    "arttype.idleanimfour": "待机层四",
     "arttype.productionanim": "生产",
-    "arttype.specialanim": "特殊运行",
+    "arttype.specialanim": "特殊动作开始",
+    "arttype.specialanimtwo": "特殊动作持续",
+    "arttype.specialanimthree": "特殊动作结束",
+    "arttype.specialanimfour": "特殊动作附加",
+    "arttype.superanim": "未充能待机",
+    "arttype.superanimtwo": "充能启动",
+    "arttype.superanimthree": "充能就绪",
+    "arttype.superanimfour": "发射后复位",
+    "arttype.deployinganim": "生产展开",
+    "arttype.underdooranim": "下层门体",
+    "arttype.roofdeployinganim": "屋顶展开",
+    "arttype.underroofdooranim": "屋顶门体",
     "weapontype.anim": "开火效果",
     "warheadtype.animlist": "命中特效",
     "warheadtype.splashlist": "水面命中特效",
@@ -526,16 +551,14 @@ const mediaGroupLabels: Record<string, string> = {
   ambient_voice: "场景播报",
   other_voice: "其他语音",
   weapon_sound: "武器开火",
-  combat_sound: "战斗音效",
   death_sound: "阵亡与毁坏",
   movement_sound: "移动与机械",
-  action_sound: "部署与操作",
+  action_sound: "单位动作与操作",
   impact_sound: "撞击与坠毁",
   destruction_sound: "爆炸与摧毁",
   unit_sound: "单位动作",
   ambient_sound: "环境音效",
-  notification_sound: "提示音效",
-  pickup_sound: "箱子与升级",
+  notification_sound: "提示与奖励",
   structure_sound: "建筑运转",
   superweapon_sound: "超级武器",
   interface_sound: "界面与过场",
@@ -547,8 +570,8 @@ const mediaGroupOrder = [
   "selection_voice", "movement_voice", "combat_voice", "feedback_voice", "death_voice", "ability_voice",
   "unit_voice", "eva_voice", "unit_intel_voice", "world_domination_voice", "mission_voice",
   "multiplayer_voice", "taunt_voice", "ambient_voice", "other_voice",
-  "weapon_sound", "combat_sound", "death_sound", "movement_sound", "action_sound", "impact_sound",
-  "destruction_sound", "superweapon_sound", "structure_sound", "pickup_sound", "unit_sound",
+  "weapon_sound", "death_sound", "movement_sound", "action_sound", "impact_sound",
+  "destruction_sound", "superweapon_sound", "structure_sound", "unit_sound",
   "notification_sound", "ambient_sound", "interface_sound", "other_sound",
   "unclassified",
 ];
@@ -651,6 +674,15 @@ type CatalogSearchSuggestion = {
   media?: MediaItem;
 };
 
+type CatalogRecentItem = Omit<CatalogSearchSuggestion, "score"> & { sourceId: string };
+
+type CatalogListFocus = {
+  sequence: number;
+  target: CatalogSearchTarget;
+  itemId: string;
+  media?: MediaItem;
+};
+
 const DEFAULT_PREVIEW_ANGLE: PreviewAngle = 1;
 const entitySortValues: EntitySort[] = ["cameo", "faction", "name_asc", "name_desc", "cost_asc", "cost_desc", "strength_asc", "strength_desc"];
 
@@ -668,6 +700,10 @@ function staticBuildInfo(currentVersion: string) {
       ? `预览版 ${commit.slice(0, 8)}`
       : `本地版 v${currentVersion || "—"}`;
   const commitUrl = commit && repositoryUrl ? `${repositoryUrl}/commit/${commit}` : "";
+  const revisionUrl = tag && repositoryUrl
+    ? `${repositoryUrl}/releases/tag/${encodeURIComponent(tag)}`
+    : commitUrl;
+  const revisionTitle = tag || commit || revision;
   const stableDistance = stableTag && Number.isFinite(ahead) && Number.isFinite(behind)
     ? ahead === 0 && behind === 0
       ? `与最新稳定版 ${stableTag} 一致`
@@ -688,7 +724,7 @@ function staticBuildInfo(currentVersion: string) {
       }).format(date);
     }
   }
-  return { revision, commit, commitUrl, stableDistance, updated };
+  return { revision, revisionUrl, revisionTitle, stableDistance, updated };
 }
 const previewAngleOptions: Array<{ value: PreviewAngle; label: string }> = [
   { value: 0, label: "正面" },
@@ -714,8 +750,8 @@ function vxlFacingForPreviewAngle(angle: PreviewAngle) {
   return (1 - angle + 8) % 8;
 }
 
-function entityFacingForPreviewAngle(bodyFormat: string | null, angle: PreviewAngle) {
-  return bodyFormat === "vxl"
+function entityFacingForPreviewAngle(facingFormat: string | null, angle: PreviewAngle) {
+  return facingFormat === "vxl"
     ? vxlFacingForPreviewAngle(angle)
     : shpFacingForPreviewAngle(angle);
 }
@@ -745,6 +781,32 @@ type BrowsingLocation = {
 const audioFormats = ["bag_audio", "wav", "aud"];
 const imageFormats = ["shp", "tmp", "pcx", "pal", "map"];
 const defaultVisibleFormats = ["bag_audio", "wav", "aud"];
+
+function preloadEntityAudioResources(entity: GameEntity) {
+  const primaryUrls: string[] = [];
+  const remainingUrls: string[] = [];
+  const seen = new Set<string>();
+  for (const association of entity.media) {
+    if (association.kind !== "voice" && association.kind !== "sound") continue;
+    let foundPrimary = false;
+    for (const sample of association.samples) {
+      if (!sample.asset || !audioFormats.includes(sample.asset.format)) continue;
+      const url = api.mediaUrl(sample.asset.id);
+      if (seen.has(url)) continue;
+      seen.add(url);
+      if (!foundPrimary) {
+        primaryUrls.push(url);
+        foundPrimary = true;
+      } else {
+        remainingUrls.push(url);
+      }
+    }
+  }
+  for (const url of primaryUrls.slice(0, 8)) {
+    void preloadAudioResource(url, "foreground");
+  }
+  preloadAudioResourceGroup([...primaryUrls.slice(8), ...remainingUrls]);
+}
 const assetCategories: Array<{
   id: string;
   label: string;
@@ -814,7 +876,52 @@ function readBrowsingLocation(): Partial<BrowsingLocation> {
 
 const ENTITY_SELECTIONS_STORAGE_KEY = "ra2exp-entity-selections-v2";
 const ASSET_SELECTIONS_STORAGE_KEY = "ra2exp-asset-selections-v2";
+const SEARCH_HISTORY_STORAGE_KEY = "ra2exp-search-history-v1";
+const SEARCH_RECENTS_STORAGE_KEY = "ra2exp-search-recents-v1";
 const MAX_STORED_SELECTIONS = 256;
+const MAX_SEARCH_HISTORY = 12;
+const MAX_SEARCH_RECENTS = 10;
+
+function writeStoredList(storageKey: string, values: unknown[]) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(values));
+  } catch {
+    // Browsing remains available when storage is disabled or full.
+  }
+}
+
+function readStoredSearchHistory() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) || "[]");
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .slice(0, MAX_SEARCH_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
+function readStoredSearchRecents() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(SEARCH_RECENTS_STORAGE_KEY) || "[]");
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((value): value is CatalogRecentItem => {
+      if (!value || typeof value !== "object") return false;
+      const item = value as Partial<CatalogRecentItem>;
+      if (
+        typeof item.key !== "string"
+        || typeof item.sourceId !== "string"
+        || (item.target !== "entities" && item.target !== "media")
+        || typeof item.title !== "string"
+        || typeof item.subtitle !== "string"
+        || typeof item.meta !== "string"
+      ) return false;
+      return item.target === "entities" ? Boolean(item.entity?.id) : Boolean(item.media?.asset.id);
+    }).slice(0, MAX_SEARCH_RECENTS);
+  } catch {
+    return [];
+  }
+}
 
 function entitySelectionKey(sourceId: string, kind: EntityKind, usage: EntityUsage | "" = "") {
   return `${sourceId}:${kind}:${usage || "all"}`;
@@ -864,12 +971,61 @@ function readStoredNumber(key: string, fallback: number, minimum: number, maximu
   return Number.isFinite(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
 }
 
+const AUDIO_DETAIL_BOTTOM_SIZE_KEY = "ra2exp-detail-bottom-audio-size-v2";
+const LEGACY_AUDIO_DETAIL_BOTTOM_SIZE_KEY = "ra2exp-detail-bottom-audio-size";
+const LEGACY_AUDIO_DETAIL_BOTTOM_DEFAULT = 270;
+
+function defaultAudioDetailBottomSize() {
+  const preferred = Math.max(320, Math.round(window.innerHeight * 0.36));
+  return Math.min(600, Math.max(180, Math.min(window.innerHeight - 246, preferred)));
+}
+
+function readStoredAudioDetailBottomSize() {
+  const fallback = defaultAudioDetailBottomSize();
+  const current = window.localStorage.getItem(AUDIO_DETAIL_BOTTOM_SIZE_KEY);
+  if (current !== null) {
+    return readStoredNumber(AUDIO_DETAIL_BOTTOM_SIZE_KEY, fallback, 180, 600);
+  }
+  const legacy = Number.parseInt(
+    window.localStorage.getItem(LEGACY_AUDIO_DETAIL_BOTTOM_SIZE_KEY) || "",
+    10,
+  );
+  if (Number.isFinite(legacy) && legacy !== LEGACY_AUDIO_DETAIL_BOTTOM_DEFAULT) {
+    return Math.min(600, Math.max(180, legacy));
+  }
+  return fallback;
+}
+
 function audioDisplayName(value: string) {
   return value.replace(/\.(?:wav|aud)$/i, "");
 }
 
 function assetDisplayName(asset: Pick<Asset, "display_name" | "format">) {
   return audioFormats.includes(asset.format) ? audioDisplayName(asset.display_name) : asset.display_name;
+}
+
+function includeFocusedMedia(
+  items: MediaItem[],
+  focus: CatalogListFocus | null,
+  kind: MediaKind,
+  sort: MediaSort,
+) {
+  const target = focus?.target === "media" ? focus.media : undefined;
+  if (
+    !target
+    || (target.kind !== kind && !(target.kind === "unknown" && kind === "sound"))
+    || items.some((item) => item.asset.id === target.asset.id)
+  ) return items;
+  const next = [...items, target];
+  next.sort((left, right) => {
+    const leftValue = sort === "description_asc"
+      ? mediaPrimaryText(left) : assetDisplayName(left.asset);
+    const rightValue = sort === "description_asc"
+      ? mediaPrimaryText(right) : assetDisplayName(right.asset);
+    const compared = leftValue.localeCompare(rightValue, "zh-CN", { numeric: true });
+    return sort === "name_desc" ? -compared : compared;
+  });
+  return next;
 }
 
 function libraryDisplayName(value: string) {
@@ -890,27 +1046,30 @@ function ruleColumnSpan(label: string, value: string) {
   return width > 72 ? 3 : width > 34 ? 2 : 1;
 }
 
-let resetNextRememberedListScroll = false;
+const appliedRememberedScrollResets = new Map<string, number>();
 
-function requestRememberedListScrollReset() {
-  resetNextRememberedListScroll = true;
-}
-
-function useRememberedScroll<T extends HTMLElement = HTMLDivElement>(
+function useRememberedScroll<
+  T extends HTMLElement = HTMLDivElement,
+  A extends HTMLElement = T,
+>(
   key: string,
   itemCount: number,
-  scope: "list" | "detail" = "list",
+  resetRevision = 0,
 ) {
   const ref = useRef<T | null>(null);
+  const alternateRef = useRef<A | null>(null);
   const activeKey = useRef("");
+  const activeResetRevision = useRef(resetRevision);
   const target = useRef(0);
   const restoring = useRef(false);
   const ready = useRef(false);
 
-  if (activeKey.current !== key) {
+  if (activeKey.current !== key || activeResetRevision.current !== resetRevision) {
+    const reset = Boolean(key)
+      && resetRevision > (appliedRememberedScrollResets.get(key) || 0);
+    if (reset) appliedRememberedScrollResets.set(key, resetRevision);
     activeKey.current = key;
-    const reset = scope === "list" && resetNextRememberedListScroll;
-    if (reset) resetNextRememberedListScroll = false;
+    activeResetRevision.current = resetRevision;
     target.current = key && !reset
       ? Math.max(0, Number.parseInt(window.localStorage.getItem(`ra2exp-scroll:${key}`) || "0", 10) || 0)
       : 0;
@@ -918,20 +1077,26 @@ function useRememberedScroll<T extends HTMLElement = HTMLDivElement>(
     ready.current = false;
   }
 
-  useEffect(() => {
-    if (!key || !ref.current) return;
+  useLayoutEffect(() => {
+    const elements = [ref.current, alternateRef.current].filter(
+      (element): element is T | A => element !== null,
+    );
+    if (!key || elements.length === 0) return;
     ready.current = false;
-    ref.current.scrollTop = target.current;
+    for (const element of elements) element.scrollTop = target.current;
     const frame = window.requestAnimationFrame(() => {
-      if (!ref.current || activeKey.current !== key) return;
-      ref.current.scrollTop = target.current;
-      restoring.current = Math.abs(ref.current.scrollTop - target.current) >= 2;
+      if (activeKey.current !== key) return;
+      for (const element of elements) element.scrollTop = target.current;
+      restoring.current = elements.some(
+        (element) => element.scrollHeight > element.clientHeight
+          && Math.abs(element.scrollTop - target.current) >= 2,
+      );
       ready.current = true;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [key, itemCount]);
+  }, [key, itemCount, resetRevision]);
 
-  function remember(event: ReactUIEvent<T>) {
+  function remember<E extends HTMLElement>(event: ReactUIEvent<E>) {
     if (!key || !ready.current) return;
     const top = event.currentTarget.scrollTop;
     if (restoring.current && Math.abs(top - target.current) >= 2) return;
@@ -940,7 +1105,27 @@ function useRememberedScroll<T extends HTMLElement = HTMLDivElement>(
     window.localStorage.setItem(`ra2exp-scroll:${key}`, String(Math.round(top)));
   }
 
-  return { ref, remember };
+  return { ref, alternateRef, remember };
+}
+
+function useResponsiveDetailPageReset(
+  key: string,
+  panelRef: { current: HTMLElement | null },
+) {
+  const previousKey = useRef(key);
+  useLayoutEffect(() => {
+    const changed = Boolean(previousKey.current) && previousKey.current !== key;
+    previousKey.current = key;
+    const panel = panelRef.current;
+    const scrollingElement = document.scrollingElement;
+    if (!changed || !panel || !scrollingElement) return;
+    const pageScrollable = scrollingElement.scrollHeight > window.innerHeight + 2;
+    const panelScrollable = panel.scrollHeight > panel.clientHeight + 2;
+    const panelTop = window.scrollY + panel.getBoundingClientRect().top;
+    if (pageScrollable && !panelScrollable && window.scrollY > panelTop + 2) {
+      window.scrollTo({ top: panelTop, behavior: "auto" });
+    }
+  }, [key, panelRef]);
 }
 
 function sortEntities(
@@ -1126,6 +1311,7 @@ function ExplorerApp() {
   const [layout, setLayout] = useState<LayoutMode>(() =>
     window.localStorage.getItem("ra2exp-layout") === "list" ? "list" : "grid",
   );
+  const [listScrollResetRevision, setListScrollResetRevision] = useState(0);
   const [detailPlacement, setDetailPlacement] = useState<DetailPlacement>(() =>
     window.localStorage.getItem("ra2exp-detail-placement") === "right" ? "right" : "bottom",
   );
@@ -1147,6 +1333,11 @@ function ExplorerApp() {
   const [searchTargets, setSearchTargets] = useState<CatalogSearchTarget[]>(
     () => rememberedSearchTargets(rememberedLocation.searchTargets),
   );
+  const [searchHistory, setSearchHistory] = useState(readStoredSearchHistory);
+  const [searchRecents, setSearchRecents] = useState(readStoredSearchRecents);
+  const catalogListFocusRef = useRef<CatalogListFocus | null>(null);
+  const catalogListFocusSequence = useRef(0);
+  const [catalogListFocus, setCatalogListFocus] = useState<CatalogListFocus | null>(null);
   const [entityUsage, setEntityUsage] = useState<EntityUsage | "">(
     entityUsageOrder.includes(rememberedLocation.entityUsage as EntityUsage)
       ? rememberedLocation.entityUsage as EntityUsage
@@ -1166,6 +1357,7 @@ function ExplorerApp() {
   const [entityDetailLoading, setEntityDetailLoading] = useState(false);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [mediaTotal, setMediaTotal] = useState(0);
+  const mediaLoadedCountRef = useRef(0);
   const [mediaGroups, setMediaGroups] = useState<Array<{ group: string; count: number }>>([]);
   const [mediaEventTypes, setMediaEventTypes] = useState<Array<{ event_type: string; count: number }>>([]);
   const [mediaKindCounts, setMediaKindCounts] = useState<Array<{ kind: MediaKind; count: number }>>([]);
@@ -1217,7 +1409,7 @@ function ExplorerApp() {
     () => readStoredNumber("ra2exp-detail-bottom-size", Math.round(window.innerHeight * 0.42), 220, 900),
   );
   const [audioDetailBottomSize, setAudioDetailBottomSize] = useState(
-    () => readStoredNumber("ra2exp-detail-bottom-audio-size", 270, 180, 600),
+    readStoredAudioDetailBottomSize,
   );
   const [detailRightSize, setDetailRightSize] = useState(
     () => readStoredNumber("ra2exp-detail-right-size", 430, 320, 900),
@@ -1319,7 +1511,19 @@ function ExplorerApp() {
   const assetScrollKey = [sourceId, selectedCategoryId, assetFormatTag, mediaEventType, isMediaCategory ? "" : assetQuery, assetSort, layout]
     .map((value) => encodeURIComponent(value))
     .join(":");
-  const assetListScroll = useRememberedScroll(`assets:${assetScrollKey}`, assets.length);
+  const assetListScroll = useRememberedScroll(
+    `assets:${assetScrollKey}`,
+    assets.length,
+    listScrollResetRevision,
+  );
+  const libraryTreeScroll = useRememberedScroll(
+    `library:${sourceId}:${gameLanguage}`,
+    visibleCategories.length + entityKinds.length + mediaGroups.length,
+  );
+
+  function requestRememberedListScrollReset() {
+    setListScrollResetRevision((current) => current + 1);
+  }
 
   function updateLayout(next: LayoutMode) {
     setLayout(next);
@@ -1388,7 +1592,7 @@ function ExplorerApp() {
     else setDetailRightSize(value);
     if (persist) {
       const key = placement === "bottom" && audioCompact
-        ? "ra2exp-detail-bottom-audio-size"
+        ? AUDIO_DETAIL_BOTTOM_SIZE_KEY
         : `ra2exp-detail-${placement}-size`;
       window.localStorage.setItem(key, String(value));
     }
@@ -1471,6 +1675,7 @@ function ExplorerApp() {
   ]);
 
   function selectEntityKind(kind: EntityKind) {
+    cancelCatalogListFocus();
     if (view !== "entities" || kind !== entityKind || entityUsage) {
       requestRememberedListScrollReset();
     }
@@ -1479,27 +1684,28 @@ function ExplorerApp() {
     if (kind !== entityKind) {
       setEntitySide("");
     }
+    const queryChanges = kind !== entityKind || Boolean(entityUsage);
     setView("entities");
     setEntityKind(kind);
     setEntityUsage("");
-    setEntityLoading(true);
-    setEntities([]);
+    if (queryChanges) setEntityLoading(true);
     setSelectedEntityId(entitySelectionsRef.current.get(entitySelectionKey(sourceId, kind)) || "");
   }
 
   function selectEntityUsage(usage: EntityUsage | "") {
+    cancelCatalogListFocus();
     requestRememberedListScrollReset();
     setSearchResultsOpen(false);
     const next = entityUsage === usage ? "" : usage;
     setEntityUsage(next);
-    setEntityLoading(true);
-    setEntities([]);
+    if (next !== entityUsage) setEntityLoading(true);
     setSelectedEntityId(entityKind
       ? entitySelectionsRef.current.get(entitySelectionKey(sourceId, entityKind, next)) || ""
       : "");
   }
 
   function selectAssetCategory(category: string) {
+    cancelCatalogListFocus();
     if (view !== "assets" || category !== assetCategory || mediaGroup || mediaEventType) {
       requestRememberedListScrollReset();
     }
@@ -1518,6 +1724,7 @@ function ExplorerApp() {
   }
 
   function selectMediaGroup(group: string) {
+    cancelCatalogListFocus();
     const next = group;
     requestRememberedListScrollReset();
     pauseAudioAsset();
@@ -1565,12 +1772,14 @@ function ExplorerApp() {
   }
 
   function selectEntityCard(id: string) {
+    cancelCatalogListFocus();
     const entity = visibleEntities.find((item) => item.id === id);
     if (entity) rememberEntityCard(id, entity.kind, entityUsage);
     setSelectedEntityId(id);
   }
 
   function selectAssetCard(id: string) {
+    cancelCatalogListFocus();
     rememberAssetCard(id, selectedCategoryId, mediaGroup);
     setSelectedId(id);
   }
@@ -1584,6 +1793,77 @@ function ExplorerApp() {
     if (next.length > 0) setSearchTargets(next);
   }
 
+  function rememberSearchHistory(value: string) {
+    const normalized = value.trim();
+    if (!normalized) return;
+    setSearchHistory((current) => {
+      const next = [normalized, ...current.filter(
+        (item) => item.toLocaleLowerCase() !== normalized.toLocaleLowerCase(),
+      )].slice(0, MAX_SEARCH_HISTORY);
+      writeStoredList(SEARCH_HISTORY_STORAGE_KEY, next);
+      return next;
+    });
+  }
+
+  function removeSearchHistory(value: string) {
+    setSearchHistory((current) => {
+      const next = current.filter((item) => item !== value);
+      writeStoredList(SEARCH_HISTORY_STORAGE_KEY, next);
+      return next;
+    });
+  }
+
+  function clearSearchHistory() {
+    setSearchHistory([]);
+    writeStoredList(SEARCH_HISTORY_STORAGE_KEY, []);
+  }
+
+  function rememberSearchRecent(item: CatalogRecentItem) {
+    setSearchRecents((current) => {
+      const next = [item, ...current.filter((entry) => entry.key !== item.key)]
+        .slice(0, MAX_SEARCH_RECENTS);
+      writeStoredList(SEARCH_RECENTS_STORAGE_KEY, next);
+      return next;
+    });
+  }
+
+  function removeSearchRecent(key: string) {
+    setSearchRecents((current) => {
+      const next = current.filter((item) => item.key !== key);
+      writeStoredList(SEARCH_RECENTS_STORAGE_KEY, next);
+      return next;
+    });
+  }
+
+  function clearSearchRecents() {
+    setSearchRecents([]);
+    writeStoredList(SEARCH_RECENTS_STORAGE_KEY, []);
+  }
+
+  function queueCatalogListFocus(suggestion: CatalogSearchSuggestion) {
+    const itemId = suggestion.entity?.id || suggestion.media?.asset.id;
+    if (!itemId) return;
+    const focus: CatalogListFocus = {
+      sequence: ++catalogListFocusSequence.current,
+      target: suggestion.target,
+      itemId,
+      media: suggestion.media,
+    };
+    catalogListFocusRef.current = focus;
+    setCatalogListFocus(focus);
+  }
+
+  const finishCatalogListFocus = useCallback((sequence: number) => {
+    if (catalogListFocusRef.current?.sequence !== sequence) return;
+    catalogListFocusRef.current = null;
+    setCatalogListFocus((current) => current?.sequence === sequence ? null : current);
+  }, []);
+
+  function cancelCatalogListFocus() {
+    catalogListFocusRef.current = null;
+    setCatalogListFocus(null);
+  }
+
   function updateCatalogSearchQuery(next: string) {
     setSearchQuery(next);
     if (!next.trim()) setSearchResultsOpen(false);
@@ -1591,10 +1871,13 @@ function ExplorerApp() {
 
   function submitCatalogSearch() {
     if (!searchQuery.trim()) return;
+    rememberSearchHistory(searchQuery);
     setSearchResultsOpen(true);
   }
 
-  function selectCatalogSuggestion(suggestion: CatalogSearchSuggestion) {
+  function navigateCatalogSuggestion(suggestion: CatalogSearchSuggestion) {
+    requestRememberedListScrollReset();
+    queueCatalogListFocus(suggestion);
     if (suggestion.entity) {
       const entity = suggestion.entity;
       pauseAudioAsset();
@@ -1603,8 +1886,7 @@ function ExplorerApp() {
       setEntityKind(entity.kind);
       setEntityUsage("");
       setEntitySide("");
-      setEntityLoading(true);
-      setEntities([]);
+      if (entity.kind !== entityKind || entityUsage || entitySide) setEntityLoading(true);
       rememberEntityCard(entity.id, entity.kind, "");
       setSelectedEntityId(entity.id);
       return;
@@ -1624,6 +1906,35 @@ function ExplorerApp() {
       setSelectedId(media.asset.id);
       toggleAudioAsset(media.asset.id, api.mediaUrl(media.asset.id));
     }
+  }
+
+  function selectCatalogSuggestion(suggestion: CatalogSearchSuggestion) {
+    rememberSearchHistory(searchQuery);
+    rememberSearchRecent({
+      key: suggestion.key,
+      sourceId,
+      target: suggestion.target,
+      title: suggestion.title,
+      subtitle: suggestion.subtitle,
+      meta: suggestion.meta,
+      entity: suggestion.entity,
+      media: suggestion.media,
+    });
+    navigateCatalogSuggestion(suggestion);
+  }
+
+  function selectCatalogRecent(item: CatalogRecentItem) {
+    rememberSearchRecent(item);
+    navigateCatalogSuggestion({
+      key: item.key,
+      target: item.target,
+      title: item.title,
+      subtitle: item.subtitle,
+      meta: item.meta,
+      score: 0,
+      entity: item.entity,
+      media: item.media,
+    });
   }
 
   function updateAutomaticUpdateCheck(next: boolean) {
@@ -1747,6 +2058,8 @@ function ExplorerApp() {
     setAssets([]);
     setEntities([]);
     setEntityTotal(0);
+    setEntityKinds([]);
+    setEntityUsages([]);
     setEntitySides([]);
     setMediaItems([]);
     setMediaGroups([]);
@@ -1821,6 +2134,7 @@ function ExplorerApp() {
   useEffect(() => {
     if (!sourceId || view !== "assets" || !isMediaCategory) return;
     let cancelled = false;
+    mediaLoadedCountRef.current = 0;
     setMediaLoading(true);
     setMediaItems([]);
     setMediaTotal(0);
@@ -1838,7 +2152,14 @@ function ExplorerApp() {
       })
         .then((page) => {
           if (cancelled) return;
-          setMediaItems(page.items);
+          const nextItems = includeFocusedMedia(
+            page.items,
+            catalogListFocusRef.current,
+            mediaKind,
+            mediaSort,
+          );
+          setMediaItems(nextItems);
+          mediaLoadedCountRef.current = page.items.length;
           setMediaTotal(page.total);
           setMediaGroups(orderedMediaGroups(page.groups));
           setMediaKindCounts(page.kinds);
@@ -1847,11 +2168,11 @@ function ExplorerApp() {
             assetSelectionKey(sourceId, selectedCategoryId, mediaGroup),
           ) || "";
           setSelectedId((current) => {
-            const next = page.items.some((item) => item.asset.id === current)
+            const next = nextItems.some((item) => item.asset.id === current)
               ? current
-              : page.items.some((item) => item.asset.id === remembered)
+              : nextItems.some((item) => item.asset.id === remembered)
                 ? remembered
-                : page.items[0]?.asset.id || "";
+                : nextItems[0]?.asset.id || "";
             if (next) rememberAssetCard(next, selectedCategoryId, mediaGroup);
             return next;
           });
@@ -1877,7 +2198,10 @@ function ExplorerApp() {
   }, [view, isMediaCategory, mediaItems]);
 
   useEffect(() => {
-    if (!sourceId || view !== "entities") return;
+    if (!sourceId) {
+      setEntityLoading(false);
+      return;
+    }
     let cancelled = false;
     setEntityLoading(true);
     const timer = window.setTimeout(() => {
@@ -1902,9 +2226,7 @@ function ExplorerApp() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [
-    sourceId, sourceRevision, entityKind, entityUsage, entitySide, gameLanguage, view,
-  ]);
+  }, [sourceId, sourceRevision, entityKind, entityUsage, entitySide, gameLanguage]);
 
   useEffect(() => {
     if (!sourceId || !searchQuery.trim()) {
@@ -1988,6 +2310,18 @@ function ExplorerApp() {
   }, [view, sourceId, sourceRevision, visibleEntities, previewAngle]);
 
   useEffect(() => {
+    if (!isStaticSnapshot) return;
+    const atlas = entities.find((entity) => entity.search_thumbnail_atlas)?.search_thumbnail_atlas;
+    if (!atlas) return;
+    const atlasAngle = Math.min(Math.max(0, previewAngle), Math.max(0, atlas.facing_count - 1));
+    const primaryUrl = api.entityThumbnailAtlasUrl(atlas.path, atlasAngle);
+    const fallbackUrl = api.entityThumbnailAtlasFallbackUrl(atlas.path, atlasAngle);
+    void preloadThumbnailAtlas(primaryUrl).then((loaded) => {
+      if (!loaded && fallbackUrl !== primaryUrl) void preloadThumbnailAtlas(fallbackUrl);
+    });
+  }, [entities, previewAngle]);
+
+  useEffect(() => {
     if (view !== "entities" || !sourceId || visibleEntities.length === 0) return;
     const selectedIndex = Math.max(0, visibleEntities.findIndex((entity) => entity.id === selectedEntityId));
     const nearbyIndexes = [selectedIndex, selectedIndex + 1, selectedIndex - 1, selectedIndex + 2, selectedIndex - 2];
@@ -2051,7 +2385,11 @@ function ExplorerApp() {
     let cancelled = false;
     setEntityDetailLoading(true);
     api.entity(sourceId, selectedEntityId, gameLanguage, sourceRevision)
-      .then((entity) => !cancelled && setSelectedEntity(entity))
+      .then((entity) => {
+        if (cancelled) return;
+        preloadEntityAudioResources(entity);
+        setSelectedEntity(entity);
+      })
       .catch((reason: Error) => {
         if (cancelled) return;
         setSelectedEntity(null);
@@ -2200,14 +2538,14 @@ function ExplorerApp() {
   }
 
   async function loadMoreMedia() {
-    if (mediaLoading || mediaItems.length >= mediaTotal || !sourceId) return;
+    if (mediaLoading || mediaLoadedCountRef.current >= mediaTotal || !sourceId) return;
     setMediaLoading(true);
     try {
       const page = await api.media(sourceId, {
         kind: mediaKind,
         group: mediaGroup,
         eventType: mediaEventType,
-        offset: mediaItems.length,
+        offset: mediaLoadedCountRef.current,
         limit: 500,
         sort: mediaSort,
         language: gameLanguage,
@@ -2216,6 +2554,7 @@ function ExplorerApp() {
         const known = new Set(current.map((item) => item.asset.id));
         return [...current, ...page.items.filter((item) => !known.has(item.asset.id))];
       });
+      mediaLoadedCountRef.current += page.items.length;
       setMediaTotal(page.total);
       setMediaEventTypes(page.event_types || []);
     } catch (reason) {
@@ -2263,6 +2602,16 @@ function ExplorerApp() {
     onSelectSuggestion: selectCatalogSuggestion,
     onSubmit: submitCatalogSearch,
     focusToken: searchFocusToken,
+    sourceId,
+    sourceRevision,
+    previewAngle,
+    history: searchHistory,
+    recents: searchRecents,
+    onSelectRecent: selectCatalogRecent,
+    onRemoveHistory: removeSearchHistory,
+    onClearHistory: clearSearchHistory,
+    onRemoveRecent: removeSearchRecent,
+    onClearRecents: clearSearchRecents,
   };
 
   if (loading) {
@@ -2291,7 +2640,7 @@ function ExplorerApp() {
               </label>
             </section>}
 
-            <nav className="library-tree" aria-label="浏览分类" tabIndex={0}>
+            <nav ref={libraryTreeScroll.ref} onScroll={libraryTreeScroll.remember} className="library-tree" aria-label="浏览分类" tabIndex={0}>
               <section className="tree-branch">
                 <div className="tree-parent"><Icon name="unit" /><strong>单位</strong><em>{entityKinds.reduce((count, item) => count + item.count, 0)}</em></div>
                 <div className="tree-children">
@@ -2370,6 +2719,9 @@ function ExplorerApp() {
             setLayout={updateLayout}
             onLoadMore={loadMoreMedia}
             scrollKey={`media:${assetScrollKey}:${mediaGroup}:${mediaEventType}:${mediaGrouped}`}
+            scrollResetRevision={listScrollResetRevision}
+            catalogFocus={catalogListFocus}
+            onCatalogFocusComplete={finishCatalogListFocus}
           /> : <section className="asset-panel panel">
             <div className="asset-toolbar">
               <label className="search-box"><Icon name="search" /><input value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="搜索名称或 CRC…" aria-label="搜索资产" />{assetQuery && <button onClick={() => setAssetQuery("")} aria-label="清除搜索"><Icon name="close" size={15} /></button>}</label>
@@ -2426,7 +2778,7 @@ function ExplorerApp() {
             previewUrl={previewUrl}
             associations={associations}
             wide={detailPlacement === "bottom"}
-            scrollKey={`asset:${sourceId}:${selectedId}`}
+            scrollKey={`asset:${sourceId}:${selectedId}:${detailPlacement}`}
             onPopout={() => window.open(staticPopoutUrl(new URLSearchParams({ detail: "asset", asset_id: selectedId })), `ra2exp-asset-${selectedId}`, "popup=yes,width=1100,height=780")}
           />
           </> : <>
@@ -2450,6 +2802,9 @@ function ExplorerApp() {
               setLayout={updateLayout}
               previewAngle={previewAngle}
               scrollKey={`entities:${sourceId}:${entityKind}:${entityUsage}:${entitySide}:${entitySort}:${entityBuildableFirst}:${layout}`}
+              scrollResetRevision={listScrollResetRevision}
+              catalogFocus={catalogListFocus}
+              onCatalogFocusComplete={finishCatalogListFocus}
             />
             <div className="workspace-resizer" role="separator" tabIndex={0} aria-label="调整详情区域大小" aria-orientation={detailPlacement === "bottom" ? "horizontal" : "vertical"} aria-valuenow={detailSize} onPointerDown={beginDetailResize} onKeyDown={resizeDetailWithKeyboard}><span /></div>
             <EntityDetailPanel
@@ -2460,7 +2815,7 @@ function ExplorerApp() {
               playerColors={playerColors}
               defaultPreviewAngle={previewAngle}
               wide={detailPlacement === "bottom"}
-              scrollKey={`entity:${sourceId}:${selectedEntityId}`}
+              scrollKey={`entity:${sourceId}:${selectedEntityId}:${detailPlacement}`}
               onPopout={() => window.open(staticPopoutUrl(new URLSearchParams({ detail: "entity", source_id: sourceId, entity_id: selectedEntityId })), `ra2exp-entity-${selectedEntityId}`, "popup=yes,width=1100,height=780")}
             />
           </>}
@@ -2544,18 +2899,36 @@ function AssetGridCard({ asset, selected, onSelect }: { asset: Asset; selected: 
   );
 }
 
+function cleanAudioText(value: string) {
+  return value.trim().replace(/^\*+\s*/, "").replace(/\s*\*+$/, "").trim();
+}
+
+function uniqueAudioTexts(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (!value) continue;
+    const cleaned = cleanAudioText(value);
+    const key = cleaned.replace(/\s+/g, " ").toLocaleLowerCase();
+    if (!cleaned || seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+  }
+  return result;
+}
+
 function mediaPrimaryText(item: MediaItem) {
-  return item.localized_texts[0]
+  return cleanAudioText(item.localized_texts[0]
     || item.description
     || item.original_texts[0]
-    || assetDisplayName(item.asset);
+    || assetDisplayName(item.asset));
 }
 
 function mediaSecondaryText(item: MediaItem) {
   const primary = mediaPrimaryText(item);
-  return [...new Set([item.original_texts.find((text) => text !== primary), assetDisplayName(item.asset)])]
-    .filter((text): text is string => Boolean(text))
-    .filter((text) => text !== primary)
+  const primaryKey = primary.replace(/\s+/g, " ").toLocaleLowerCase();
+  return uniqueAudioTexts([...item.original_texts, assetDisplayName(item.asset)])
+    .filter((text) => text.replace(/\s+/g, " ").toLocaleLowerCase() !== primaryKey)
     .join(" · ");
 }
 
@@ -2572,7 +2945,60 @@ function mediaEntityGroupLabels(entities: MediaItem["entities"]) {
   }))];
 }
 
-function mediaSectionIdentity(item: MediaItem) {
+function normalizedMediaEvents(item: MediaItem) {
+  return item.events.map((event) => event.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "")).join(" ");
+}
+
+function semanticSoundSectionIdentity(item: MediaItem, selectedGroup: string) {
+  const events = normalizedMediaEvents(item);
+  const section = (key: string, label: string) => ({ key: `semantic:${selectedGroup}:${key}`, label, subtitle: "" });
+  if (selectedGroup === "superweapon_sound") {
+    if (events.includes("forceshield")) return section("force-shield", "力场护盾");
+    if (events.includes("geneticmutator")) return section("genetic-mutator", "基因突变器");
+    if (events.includes("ironcurtain")) return section("iron-curtain", "铁幕装置");
+    if (events.includes("nuke") || events.includes("nuclear")) return section("nuclear", "核弹");
+    if (events.includes("psychicdominator")) return section("psychic-dominator", "心灵控制器");
+    if (events.includes("weather")) return section("weather-control", "天气控制器");
+    if (events.includes("chronosphere") || events.includes("chronoscreen")) return section("chronosphere", "超时空传送");
+    if (events.includes("psychicreveal")) return section("psychic-reveal", "心灵探测");
+    return section("other", "其他超级武器");
+  }
+  if (selectedGroup === "notification_sound") {
+    if (["crate", "bonus", "credit", "upgrade", "heal"].some((token) => events.includes(token))) {
+      return section("reward", "箱子、资源与升级");
+    }
+    if (["camera", "radar", "beacon", "detected", "flare"].some((token) => events.includes(token))) {
+      return section("recon", "侦察与雷达");
+    }
+    if (["player", "join", "game", "cheer", "garrison", "repair"].some((token) => events.includes(token))) {
+      return section("status", "玩家与状态");
+    }
+    if (["warning", "alarm", "siren", "mindcleared", "bombtick", "ready"].some((token) => events.includes(token))) {
+      return section("alert", "警报与就绪");
+    }
+    return section("other", "其他提示");
+  }
+  if (selectedGroup === "interface_sound") {
+    if (["menu", "options", "commandbar", "mouse", "tab", "click", "scroll"].some((token) => events.includes(token))) {
+      return section("controls", "菜单与操作");
+    }
+    if (["movie", "intro", "map", "wipe"].some((token) => events.includes(token))) {
+      return section("transition", "过场与切换");
+    }
+    if (["score", "bargraph", "bestbox", "efficien"].some((token) => events.includes(token))) {
+      return section("score", "结算界面");
+    }
+    if (["message", "text", "type"].some((token) => events.includes(token))) {
+      return section("message", "文字与消息");
+    }
+    return section("other", "其他界面");
+  }
+  return null;
+}
+
+function mediaSectionIdentity(item: MediaItem, selectedGroup: string) {
+  const semanticSection = semanticSoundSectionIdentity(item, selectedGroup);
+  if (semanticSection) return semanticSection;
   if (item.entities.length === 1) {
     const entity = item.entities[0];
     return { key: `entity:${entity.id}`, label: entity.display_name, subtitle: entity.id };
@@ -2606,19 +3032,37 @@ type CatalogSearchBarProps = {
   onSelectSuggestion: (suggestion: CatalogSearchSuggestion) => void;
   onSubmit: () => void;
   focusToken: number;
+  sourceId: string;
+  sourceRevision: string;
+  previewAngle: PreviewAngle;
+  history: string[];
+  recents: CatalogRecentItem[];
+  onSelectRecent: (item: CatalogRecentItem) => void;
+  onRemoveHistory: (value: string) => void;
+  onClearHistory: () => void;
+  onRemoveRecent: (key: string) => void;
+  onClearRecents: () => void;
 };
 
 function CatalogSearchBar(props: CatalogSearchBarProps) {
   const {
     query, setQuery, targets, setTargets, suggestions, suggestionsLoading,
-    onSelectSuggestion, onSubmit, focusToken,
+    onSelectSuggestion, onSubmit, focusToken, sourceId, sourceRevision, previewAngle,
+    history, recents, onSelectRecent, onRemoveHistory, onClearHistory,
+    onRemoveRecent, onClearRecents,
   } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsScrollRef = useRef<HTMLDivElement>(null);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(-1);
   const suggestionsVisible = suggestionsOpen && Boolean(query.trim())
     && (suggestions.length > 0 || suggestionsLoading);
+  const historyVisible = suggestionsOpen && !query.trim();
+  const visibleRecents = recents.filter(
+    (item) => item.sourceId === sourceId && targets.includes(item.target),
+  );
   const searchesEntities = targets.includes("entities");
   const searchesMedia = targets.includes("media");
   const placeholder = searchesEntities && searchesMedia
@@ -2631,11 +3075,17 @@ function CatalogSearchBar(props: CatalogSearchBarProps) {
     : searchesEntities ? "搜索单位" : "搜索声音";
 
   useEffect(() => setSuggestionIndex(-1), [query, suggestions[0]?.key]);
+  useLayoutEffect(() => {
+    if (suggestionsScrollRef.current) suggestionsScrollRef.current.scrollTop = 0;
+  }, [query, targets.join(":"), suggestionsOpen]);
+  useLayoutEffect(() => {
+    if (historyScrollRef.current) historyScrollRef.current.scrollTop = 0;
+  }, [suggestionsOpen]);
   useEffect(() => {
     if (focusToken <= 0) return;
     inputRef.current?.focus();
     inputRef.current?.select();
-    setSuggestionsOpen(Boolean(query.trim()));
+    setSuggestionsOpen(true);
   }, [focusToken]);
   useEffect(() => {
     const closeWhenOutside = (event: PointerEvent | FocusEvent) => {
@@ -2659,6 +3109,17 @@ function CatalogSearchBar(props: CatalogSearchBarProps) {
   function selectSuggestion(suggestion: CatalogSearchSuggestion) {
     onSelectSuggestion(suggestion);
     setSuggestionsOpen(false);
+  }
+
+  function selectRecent(item: CatalogRecentItem) {
+    onSelectRecent(item);
+    setSuggestionsOpen(false);
+  }
+
+  function selectHistory(value: string) {
+    setQuery(value);
+    setSuggestionsOpen(true);
+    inputRef.current?.focus();
   }
 
   function submitSearch() {
@@ -2701,13 +3162,48 @@ function CatalogSearchBar(props: CatalogSearchBarProps) {
         <label className={searchesEntities ? "active" : ""}><input type="checkbox" checked={searchesEntities} onChange={(event) => toggleTarget("entities", event.target.checked)} /><span>单位</span></label>
         <label className={searchesMedia ? "active" : ""}><input type="checkbox" checked={searchesMedia} onChange={(event) => toggleTarget("media", event.target.checked)} /><span>声音</span></label>
       </div>
-      <button type="button" className="catalog-search-clear" disabled={!query} onClick={() => { setQuery(""); setSuggestionsOpen(false); inputRef.current?.focus(); }} aria-label="清除搜索" title="清除搜索"><Icon name="close" size={15} /></button>
+      <button type="button" className="catalog-search-clear" disabled={!query} onClick={() => { setQuery(""); setSuggestionsOpen(true); inputRef.current?.focus(); }} aria-label="清除搜索" title="清除搜索"><Icon name="close" size={15} /></button>
     </div>
     <div className="entity-search-input">
-      <div className="search-box entity-search-box"><Icon name="search" /><input ref={inputRef} value={query} onFocus={() => setSuggestionsOpen(true)} onKeyDown={handleSearchKeyDown} onChange={(event) => { setQuery(event.target.value); setSuggestionsOpen(true); }} placeholder={placeholder} aria-label={searchLabel} role="combobox" aria-autocomplete="list" aria-expanded={suggestionsVisible} aria-controls="catalog-search-suggestions" aria-activedescendant={suggestionsVisible && suggestionIndex >= 0 && suggestions[suggestionIndex] ? `catalog-suggestion-${suggestions[suggestionIndex].key.replace(/[^a-z0-9_-]/gi, "-")}` : undefined} /></div>
-      {suggestionsVisible && <div className="entity-search-suggestions" id="catalog-search-suggestions" role="listbox" aria-label="搜索建议" onMouseDown={(event) => event.preventDefault()}>
-        {suggestions.map((suggestion, index) => <button id={`catalog-suggestion-${suggestion.key.replace(/[^a-z0-9_-]/gi, "-")}`} type="button" role="option" aria-selected={index === suggestionIndex} className={index === suggestionIndex ? "active" : ""} key={suggestion.key} onMouseEnter={() => setSuggestionIndex(index)} onClick={() => selectSuggestion(suggestion)}><Icon name={suggestion.target === "entities" ? "unit" : "voice"} size={16} /><span><strong>{suggestion.title}</strong><small>{suggestion.subtitle}</small></span><em>{suggestion.meta}</em></button>)}
+      <div className="search-box entity-search-box"><Icon name="search" /><input ref={inputRef} value={query} onFocus={() => setSuggestionsOpen(true)} onKeyDown={handleSearchKeyDown} onChange={(event) => { setQuery(event.target.value); setSuggestionsOpen(true); }} placeholder={placeholder} aria-label={searchLabel} role="combobox" aria-autocomplete="list" aria-expanded={suggestionsVisible || historyVisible} aria-controls={suggestionsVisible ? "catalog-search-suggestions" : historyVisible ? "catalog-search-history" : undefined} aria-activedescendant={suggestionsVisible && suggestionIndex >= 0 && suggestions[suggestionIndex] ? `catalog-suggestion-${suggestions[suggestionIndex].key.replace(/[^a-z0-9_-]/gi, "-")}` : undefined} /></div>
+      {suggestionsVisible && <div ref={suggestionsScrollRef} className="entity-search-suggestions" id="catalog-search-suggestions" role="listbox" aria-label="搜索建议" onMouseDown={(event) => event.preventDefault()}>
+        {suggestions.map((suggestion, index) => {
+          const mediaVisualKind = suggestion.media?.kind === "voice" ? "voice" : "sound";
+          return <button id={`catalog-suggestion-${suggestion.key.replace(/[^a-z0-9_-]/gi, "-")}`} type="button" role="option" aria-selected={index === suggestionIndex} className={`${index === suggestionIndex ? "active " : ""}catalog-suggestion-${suggestion.target === "entities" ? "entity" : mediaVisualKind}`} key={suggestion.key} onMouseEnter={() => setSuggestionIndex(index)} onClick={() => selectSuggestion(suggestion)}>
+            {suggestion.entity
+              ? <EntityCardPreview entity={suggestion.entity} sourceId={sourceId} sourceRevision={sourceRevision} previewAngle={previewAngle} compact />
+              : <span className={`catalog-suggestion-icon catalog-suggestion-icon-${mediaVisualKind}`}><Icon name={mediaVisualKind} size={18} /></span>}
+            <span className="catalog-suggestion-copy"><strong>{suggestion.title}</strong><small>{suggestion.subtitle}</small></span>
+            <em>{suggestion.meta}</em>
+          </button>;
+        })}
         {suggestionsLoading && suggestions.length === 0 && <div className="catalog-search-loading"><span />正在检索单位和声音…</div>}
+      </div>}
+      {historyVisible && <div ref={historyScrollRef} className="catalog-search-history" id="catalog-search-history" onMouseDown={(event) => event.preventDefault()}>
+        {visibleRecents.length > 0 && <section>
+          <header><strong>最近访问</strong><button type="button" onClick={onClearRecents}>清空</button></header>
+          <div className="catalog-history-list">{visibleRecents.map((item) => {
+            const mediaVisualKind = item.media?.kind === "voice" ? "voice" : "sound";
+            return <div className={`catalog-history-item catalog-history-${item.target === "entities" ? "entity" : mediaVisualKind}`} key={item.key}>
+              <button type="button" className="catalog-history-target" onClick={() => selectRecent(item)}>
+                {item.entity
+                  ? <EntityCardPreview entity={item.entity} sourceId={sourceId} sourceRevision={sourceRevision} previewAngle={previewAngle} compact />
+                  : <span className={`catalog-suggestion-icon catalog-suggestion-icon-${mediaVisualKind}`}><Icon name={mediaVisualKind} size={18} /></span>}
+                <span className="catalog-suggestion-copy"><strong>{item.title}</strong><small>{item.subtitle}</small></span>
+                <em>{item.meta}</em>
+              </button>
+              <button type="button" className="catalog-history-remove" onClick={() => onRemoveRecent(item.key)} aria-label={`删除最近访问：${item.title}`} title="删除"><Icon name="close" size={14} /></button>
+            </div>;
+          })}</div>
+        </section>}
+        {history.length > 0 && <section>
+          <header><strong>搜索历史</strong><button type="button" onClick={onClearHistory}>清空</button></header>
+          <div className="catalog-history-list catalog-query-history">{history.map((value) => <div className="catalog-history-item" key={value}>
+            <button type="button" className="catalog-history-target" onClick={() => selectHistory(value)}><span className="catalog-history-query-icon"><Icon name="search" size={16} /></span><strong>{value}</strong></button>
+            <button type="button" className="catalog-history-remove" onClick={() => onRemoveHistory(value)} aria-label={`删除搜索历史：${value}`} title="删除"><Icon name="close" size={14} /></button>
+          </div>)}</div>
+        </section>}
+        {visibleRecents.length === 0 && history.length === 0 && <div className="catalog-history-empty">暂无搜索记录</div>}
       </div>}
     </div>
     <button type="button" className="catalog-search-submit" disabled={!query.trim()} onClick={submitSearch}><Icon name="search" size={15} /><span>搜索</span></button>
@@ -2759,7 +3255,10 @@ function SearchResultsPanel({
   const [entitySideFilter, setEntitySideFilter] = useState("");
   const [mediaKindFilter, setMediaKindFilter] = useState<MediaKind | "">("");
   const [mediaGroupFilter, setMediaGroupFilter] = useState("");
-  const scroll = useRememberedScroll(`search-results:${query}`, entities.length + media.length);
+  const scroll = useRememberedScroll(
+    `search-results:${query}:${search.targets.join(",")}:${entityKindFilter}:${entitySideFilter}:${mediaKindFilter}:${mediaGroupFilter}`,
+    entities.length + media.length,
+  );
 
   useEffect(() => {
     setEntityKindFilter("");
@@ -2883,7 +3382,7 @@ function SearchResultsPanel({
   </section>;
 }
 
-function MediaListPanel({ items, total, loading, search, groups, selectedGroup, setSelectedGroup, eventTypes, selectedEventType, setSelectedEventType, grouped, setGrouped, headerAlignment, selectedId, onSelect, playingId, sort, setSort, layout, setLayout, onLoadMore, scrollKey }: {
+function MediaListPanel({ items, total, loading, search, groups, selectedGroup, setSelectedGroup, eventTypes, selectedEventType, setSelectedEventType, grouped, setGrouped, headerAlignment, selectedId, onSelect, playingId, sort, setSort, layout, setLayout, onLoadMore, scrollKey, scrollResetRevision, catalogFocus, onCatalogFocusComplete }: {
   items: MediaItem[];
   total: number;
   loading: boolean;
@@ -2906,19 +3405,22 @@ function MediaListPanel({ items, total, loading, search, groups, selectedGroup, 
   setLayout: (layout: LayoutMode) => void;
   onLoadMore: () => Promise<void>;
   scrollKey: string;
+  scrollResetRevision: number;
+  catalogFocus: CatalogListFocus | null;
+  onCatalogFocusComplete: (sequence: number) => void;
 }) {
-  const listScroll = useRememberedScroll(scrollKey, items.length);
+  const listScroll = useRememberedScroll(scrollKey, items.length, scrollResetRevision);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
   const sections = useMemo(() => {
     const groupedItems = new Map<string, { label: string; subtitle: string; items: MediaItem[] }>();
     for (const item of items) {
-      const identity = mediaSectionIdentity(item);
+      const identity = mediaSectionIdentity(item, selectedGroup);
       const section = groupedItems.get(identity.key) || { label: identity.label, subtitle: identity.subtitle, items: [] };
       section.items.push(item);
       groupedItems.set(identity.key, section);
     }
     return [...groupedItems.entries()].map(([key, section]) => ({ key, ...section }));
-  }, [items]);
+  }, [items, selectedGroup]);
   const allSectionsExpanded = sections.every((section) => !collapsedSections.has(section.key));
 
   useEffect(() => {
@@ -2928,6 +3430,42 @@ function MediaListPanel({ items, total, loading, search, groups, selectedGroup, 
       return next.size === current.size ? current : next;
     });
   }, [sections]);
+
+  useEffect(() => {
+    if (
+      catalogFocus?.target !== "media"
+      || !items.some((item) => item.asset.id === catalogFocus.itemId)
+    ) return;
+    const section = grouped
+      ? sections.find((item) => item.items.some(
+        (media) => media.asset.id === catalogFocus.itemId,
+      ))
+      : undefined;
+    if (section && collapsedSections.has(section.key)) {
+      setCollapsedSections((current) => {
+        const next = new Set(current);
+        next.delete(section.key);
+        return next;
+      });
+      return;
+    }
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const target = listScroll.ref.current?.querySelector<HTMLButtonElement>(
+          `[data-catalog-item-id="${CSS.escape(catalogFocus.itemId)}"]`,
+        );
+        if (!target) return;
+        target.scrollIntoView({ block: "center", inline: "center" });
+        target.focus({ preventScroll: true });
+        onCatalogFocusComplete(catalogFocus.sequence);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [catalogFocus, collapsedSections, grouped, items, onCatalogFocusComplete, sections]);
 
   function toggleSection(key: string) {
     setCollapsedSections((current) => {
@@ -2945,15 +3483,16 @@ function MediaListPanel({ items, total, loading, search, groups, selectedGroup, 
   }
 
   function renderMediaItem(item: MediaItem) {
+    const textCount = uniqueAudioTexts(item.texts).length;
     if (layout === "list") {
-      return <button key={item.asset.id} className={`asset-row media-row ${selectedId === item.asset.id ? "selected" : ""} ${playingId === item.asset.id ? "playing" : ""}`} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => onSelect(item.asset.id)}>
+      return <button key={item.asset.id} data-catalog-item-id={item.asset.id} className={`asset-row media-row ${selectedId === item.asset.id ? "selected" : ""} ${playingId === item.asset.id ? "playing" : ""}`} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => onSelect(item.asset.id)}>
         <span className="file-icon format-audio"><Icon name={playingId === item.asset.id ? "pause" : "play"} /></span>
-        <span className="asset-main"><strong>{mediaPrimaryText(item)}</strong>{(mediaSecondaryText(item) || item.texts.length > 1) && <small>{mediaSecondaryText(item)}{item.texts.length > 1 ? `${mediaSecondaryText(item) ? " · " : ""}${item.texts.length} 条文本` : ""}</small>}</span>
+        <span className="asset-main"><strong>{mediaPrimaryText(item)}</strong>{(mediaSecondaryText(item) || textCount > 1) && <small>{mediaSecondaryText(item)}{textCount > 1 ? `${mediaSecondaryText(item) ? " · " : ""}${textCount} 条文本` : ""}</small>}</span>
         <span className="media-links">{item.entities.slice(0, 2).map((entity) => entity.display_name).join(" · ") || item.slots.slice(0, 2).map(mediaSlotLabel).join(" · ") || "未关联"}</span>
         <Icon name="chevron" size={15} />
       </button>;
     }
-    return <button key={item.asset.id} className={`asset-card media-card ${selectedId === item.asset.id ? "selected" : ""} ${playingId === item.asset.id ? "playing" : ""}`} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => onSelect(item.asset.id)}>
+    return <button key={item.asset.id} data-catalog-item-id={item.asset.id} className={`asset-card media-card ${selectedId === item.asset.id ? "selected" : ""} ${playingId === item.asset.id ? "playing" : ""}`} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => onSelect(item.asset.id)}>
       <span className="asset-card-copy"><strong title={mediaPrimaryText(item)}>{mediaPrimaryText(item)}</strong>{mediaSecondaryText(item) && <small title={mediaSecondaryText(item)}>{mediaSecondaryText(item)}</small>}<em>{item.slots.slice(0, 2).map(mediaSlotLabel).join(" · ") || "未分类"}</em></span>
     </button>;
   }
@@ -3024,6 +3563,10 @@ function catalogSearchTokens(query: string) {
   return tokens;
 }
 
+function normalizeCatalogSearchText(value: string) {
+  return value.toLocaleLowerCase().replaceAll("砲", "炮");
+}
+
 function boundedSuggestionMatch(needle: string, haystack: string) {
   if (needle.length < (/\p{Script=Han}/u.test(needle) ? 2 : 4)) return false;
   let first = haystack.indexOf(needle[0]);
@@ -3043,12 +3586,49 @@ function boundedSuggestionMatch(needle: string, haystack: string) {
   return false;
 }
 
+function singleSuggestionEditOrTransposition(left: string, right: string) {
+  if (Math.abs(left.length - right.length) > 1) return false;
+  if (left.length === right.length) {
+    const differences = [...left].map((character, index) => character === right[index] ? -1 : index)
+      .filter((index) => index >= 0);
+    if (differences.length <= 1) return true;
+    return differences.length === 2
+      && differences[1] === differences[0] + 1
+      && left[differences[0]] === right[differences[1]]
+      && left[differences[1]] === right[differences[0]];
+  }
+  const [shorter, longer] = left.length < right.length ? [left, right] : [right, left];
+  let mismatch = 0;
+  let shortIndex = 0;
+  for (const character of longer) {
+    if (shortIndex < shorter.length && shorter[shortIndex] === character) {
+      shortIndex += 1;
+      continue;
+    }
+    mismatch += 1;
+    if (mismatch > 1) return false;
+  }
+  return true;
+}
+
+function nearbySuggestionEdit(needle: string, haystack: string) {
+  if (needle.length < (/\p{Script=Han}/u.test(needle) ? 3 : 5)) return false;
+  for (let width = Math.max(1, needle.length - 1); width <= needle.length + 1; width += 1) {
+    for (let start = 0; start + width <= haystack.length; start += 1) {
+      if (singleSuggestionEditOrTransposition(needle, haystack.slice(start, start + width))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function catalogSuggestionScore(query: string, primaryValues: string[], aliasValues: string[] = []) {
-  const raw = query.trim().toLocaleLowerCase();
+  const raw = normalizeCatalogSearchText(query.trim());
   const tokens = catalogSearchTokens(raw);
   if (!tokens.length) return Number.POSITIVE_INFINITY;
-  const primary = primaryValues.map((value) => value.toLocaleLowerCase());
-  const aliases = aliasValues.map((value) => value.toLocaleLowerCase());
+  const primary = primaryValues.map(normalizeCatalogSearchText);
+  const aliases = aliasValues.map(normalizeCatalogSearchText);
   if (primary.some((value) => value === raw)) return 0;
   let score = 0;
   for (const token of tokens) {
@@ -3062,7 +3642,8 @@ function catalogSuggestionScore(query: string, primaryValues: string[], aliasVal
         : primary.some((value) => value.includes(token)) ? 3
           : normalizedAliases.some((value) => value.includes(compact)) ? 4
             : [...normalizedPrimary, ...normalizedAliases].some((value) => (
-              value.length <= Math.max(64, compact.length * 8) && boundedSuggestionMatch(compact, value)
+              value.length <= Math.max(64, compact.length * 8)
+              && (boundedSuggestionMatch(compact, value) || nearbySuggestionEdit(compact, value))
             )) ? 5 : Number.POSITIVE_INFINITY;
     if (!Number.isFinite(termScore)) return termScore;
     score += termScore;
@@ -3096,7 +3677,7 @@ function mediaSuggestionScore(item: MediaItem, query: string) {
   );
 }
 
-function EntityListPanel({ entities, total, loading, search, sort, setSort, buildableFirst, setBuildableFirst, selectedId, setSelectedId, sourceId, sourceRevision, sides, selectedSide, setSelectedSide, layout, setLayout, previewAngle, scrollKey }: {
+function EntityListPanel({ entities, total, loading, search, sort, setSort, buildableFirst, setBuildableFirst, selectedId, setSelectedId, sourceId, sourceRevision, sides, selectedSide, setSelectedSide, layout, setLayout, previewAngle, scrollKey, scrollResetRevision, catalogFocus, onCatalogFocusComplete }: {
   entities: EntitySummary[];
   total: number;
   loading: boolean;
@@ -3116,8 +3697,33 @@ function EntityListPanel({ entities, total, loading, search, sort, setSort, buil
   setLayout: (layout: LayoutMode) => void;
   previewAngle: PreviewAngle;
   scrollKey: string;
+  scrollResetRevision: number;
+  catalogFocus: CatalogListFocus | null;
+  onCatalogFocusComplete: (sequence: number) => void;
 }) {
-  const listScroll = useRememberedScroll(scrollKey, entities.length);
+  const listScroll = useRememberedScroll(scrollKey, entities.length, scrollResetRevision);
+  useEffect(() => {
+    if (
+      catalogFocus?.target !== "entities"
+      || !entities.some((entity) => entity.id === catalogFocus.itemId)
+    ) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const target = listScroll.ref.current?.querySelector<HTMLButtonElement>(
+          `[data-catalog-item-id="${CSS.escape(catalogFocus.itemId)}"]`,
+        );
+        if (!target) return;
+        target.scrollIntoView({ block: "center", inline: "center" });
+        target.focus({ preventScroll: true });
+        onCatalogFocusComplete(catalogFocus.sequence);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [catalogFocus, entities, layout, onCatalogFocusComplete]);
   return (
     <section className="asset-panel entity-panel panel">
       <div className="asset-toolbar">
@@ -3145,7 +3751,7 @@ function EntityListPanel({ entities, total, loading, search, sort, setSort, buil
       </div>
       <div ref={listScroll.ref} onScroll={listScroll.remember} className={`asset-list ${layout === "grid" ? "asset-grid entity-grid" : "list-columns"}`} tabIndex={0} aria-label="单位列表">
         {layout === "list" ? entities.map((entity) => (
-          <button key={entity.id} className={`asset-row entity-row ${selectedId === entity.id ? "selected" : ""}`} onClick={() => setSelectedId(entity.id)}>
+          <button key={entity.id} data-catalog-item-id={entity.id} className={`asset-row entity-row ${selectedId === entity.id ? "selected" : ""}`} onClick={() => setSelectedId(entity.id)}>
             <span className={`file-icon entity-icon ${entity.renderable ? "ready" : "missing"}`}><Icon name="unit" /></span>
             <span className="asset-main"><strong>{entity.display_name}</strong><small>{entity.id}{entity.body_status !== "not_defined" ? ` → ${entity.image}` : ""}{entity.internal_name !== entity.display_name ? ` · ${entity.internal_name}` : ""}</small></span>
             <span className="entity-kind">{entityUsageLabel(entity.kind, entity.usage)}</span>
@@ -3164,7 +3770,7 @@ function EntityListPanel({ entities, total, loading, search, sort, setSort, buil
 
 function EntityGridCard({ entity, sourceId, sourceRevision, previewAngle, selected, onSelect }: { entity: EntitySummary; sourceId: string; sourceRevision: string; previewAngle: PreviewAngle; selected: boolean; onSelect: (id: string) => void }) {
   return (
-    <button className={`asset-card entity-card ${selected ? "selected" : ""}`} onClick={() => onSelect(entity.id)}>
+    <button data-catalog-item-id={entity.id} className={`asset-card entity-card ${selected ? "selected" : ""}`} onClick={() => onSelect(entity.id)}>
       <EntityCardPreview entity={entity} sourceId={sourceId} sourceRevision={sourceRevision} previewAngle={previewAngle} />
       <span className="asset-card-copy"><strong title={entity.display_name}>{entity.display_name}</strong></span>
     </button>
@@ -3172,26 +3778,31 @@ function EntityGridCard({ entity, sourceId, sourceRevision, previewAngle, select
 }
 
 function entityCardPlayerColor(entity: EntitySummary) {
-  const side = entity.sides.length === 1
-    ? entity.sides[0]
-    : entity.sides.length === 0 && entity.affiliation?.kind === "side"
-      ? entity.affiliation.id : "";
+  const side = entityAffiliationSide(entity);
   return side === "GDI" ? "blue"
     : side === "Nod" ? "red"
       : side === "ThirdSide" ? "purple" : "";
 }
 
-function entityCardPreviewUrl(entity: EntitySummary, sourceId: string, previewAngle: PreviewAngle, sourceRevision: string) {
-  const staticFacing = entity.body_format === "shp" && entity.kind === "infantry"
-    ? entityFacingForPreviewAngle(entity.body_format, previewAngle)
+function entityAffiliationSide(entity: EntitySummary) {
+  return entity.sides.length === 1
+    ? entity.sides[0]
+    : entity.sides.length === 0 && entity.affiliation?.kind === "side"
+      ? entity.affiliation.id : "";
+}
+
+function entityCardPreviewUrl(entity: EntitySummary, sourceId: string, previewAngle: PreviewAngle, sourceRevision: string, compact = false) {
+  const staticFacing = entity.body_format !== "vxl" && entity.facing_format
+    ? entityFacingForPreviewAngle(entity.facing_format, previewAngle)
     : 0;
   const facing = isStaticSnapshot
     ? staticFacing
-    : entityFacingForPreviewAngle(entity.body_format, previewAngle);
+    : entityFacingForPreviewAngle(entity.facing_format, previewAngle);
   return api.entityPreviewUrl(sourceId, entity.id, {
     facing,
     scale: 2,
     thumbnail: true,
+    compact,
     playerColor: entityCardPlayerColor(entity),
     revision: sourceRevision,
   });
@@ -3247,22 +3858,35 @@ function useThumbnailAtlasUrl(primaryUrl: string, fallbackUrl: string) {
   return resolvedUrl;
 }
 
-function EntityCardPreview({ entity, sourceId, sourceRevision, previewAngle }: { entity: EntitySummary; sourceId: string; sourceRevision: string; previewAngle: PreviewAngle }) {
+function EntityCardPreview({ entity, sourceId, sourceRevision, previewAngle, compact = false }: { entity: EntitySummary; sourceId: string; sourceRevision: string; previewAngle: PreviewAngle; compact?: boolean }) {
   const previewRef = useRef<HTMLSpanElement>(null);
-  const atlas = isStaticSnapshot ? entity.thumbnail_atlas : undefined;
-  const requestedFacing = entity.body_format === "shp" && entity.kind === "infantry"
-    ? entityFacingForPreviewAngle(entity.body_format, previewAngle)
+  const affiliationSide = entityAffiliationSide(entity);
+  const searchAtlas = compact && isStaticSnapshot ? entity.search_thumbnail_atlas : undefined;
+  const atlas = searchAtlas ?? (isStaticSnapshot ? entity.thumbnail_atlas : undefined);
+  const requestedFacing = entity.facing_format
+    ? entityFacingForPreviewAngle(entity.facing_format, previewAngle)
     : 0;
   const atlasFacing = atlas
-    ? Math.min(Math.max(0, requestedFacing), Math.max(0, atlas.facing_count - 1))
+    ? Math.min(
+      Math.max(0, searchAtlas ? previewAngle : requestedFacing),
+      Math.max(0, atlas.facing_count - 1),
+    )
     : 0;
   const atlasUrl = atlas ? api.entityThumbnailAtlasUrl(atlas.path, atlasFacing) : "";
   const atlasFallbackUrl = atlas ? api.entityThumbnailAtlasFallbackUrl(atlas.path, atlasFacing) : "";
   const readyAtlasUrl = useThumbnailAtlasUrl(atlasUrl, atlasFallbackUrl);
   const atlasColumn = atlas ? atlas.index % atlas.columns : 0;
   const atlasRow = atlas ? Math.floor(atlas.index / atlas.columns) : 0;
+  const atlasContentBounds = compact && atlas && !searchAtlas
+    ? atlas.content_bounds?.[atlasFacing]
+    : undefined;
+  const atlasContentWidth = atlasContentBounds?.width ?? atlas?.cell_width ?? 1;
+  const atlasContentHeight = atlasContentBounds?.height ?? atlas?.cell_height ?? 1;
+  const atlasScale = compact && atlas && !searchAtlas
+    ? Math.min(34 / atlasContentWidth, 34 / atlasContentHeight)
+    : 1;
   const url = entity.renderable && !atlas
-    ? entityCardPreviewUrl(entity, sourceId, previewAngle, sourceRevision)
+    ? entityCardPreviewUrl(entity, sourceId, previewAngle, sourceRevision, compact)
     : "";
   const [readyUrl, setReadyUrl] = useState(() => hasLoadedCardPreview(url) ? url : "");
 
@@ -3299,25 +3923,32 @@ function EntityCardPreview({ entity, sourceId, sourceRevision, previewAngle }: {
     };
   }, [url]);
 
-  return <span ref={previewRef} className={`asset-card-preview entity-card-preview format-${entity.body_format || "unknown"} ${entity.renderable ? "ready" : "missing"}`}>
+  return <span ref={previewRef} className={`asset-card-preview entity-card-preview format-${entity.body_format || "unknown"} ${entity.renderable ? "ready" : "missing"} ${compact ? "catalog-suggestion-thumbnail" : ""}`}>
     {entity.renderable
       ? atlas
-        ? <span className="entity-thumbnail-atlas" aria-hidden="true" style={{
-          width: atlas.cell_width,
-          height: atlas.cell_height,
+        ? <span className={`entity-thumbnail-atlas ${searchAtlas ? "entity-search-thumbnail-atlas" : compact ? "legacy-search-thumbnail-atlas" : ""}`} aria-hidden="true" style={{
+          width: atlasContentWidth,
+          height: atlasContentHeight,
           backgroundImage: `url("${readyAtlasUrl}")`,
-          backgroundPosition: `${-atlasColumn * atlas.cell_width}px ${-atlasRow * atlas.cell_height}px`,
+          backgroundPosition: `${-(atlasColumn * atlas.cell_width + (atlasContentBounds?.x ?? 0))}px ${-(atlasRow * atlas.cell_height + (atlasContentBounds?.y ?? 0))}px`,
+          transform: compact && !searchAtlas
+            ? `translate(-50%, -50%) scale(${atlasScale})`
+            : undefined,
         }} />
         : readyUrl && <img decoding="async" fetchPriority="low" src={readyUrl} alt="" onError={(event) => { event.currentTarget.hidden = true; }} />
       : <Icon name="unit" size={34} />}
-    {entity.affiliation && <span className={`entity-affiliation-badge affiliation-${entity.affiliation.kind} affiliation-${affiliationClassId(entity.affiliation.id)}`} title={entity.affiliation.display_name}>
+    {!compact && entity.affiliation && <span className={`entity-affiliation-badge affiliation-${entity.affiliation.kind} affiliation-${affiliationClassId(entity.affiliation.id)} ${affiliationSide ? `affiliation-${affiliationClassId(affiliationSide)}` : ""}`} title={entity.affiliation.display_name}>
       {entity.affiliation.display_name}
     </span>}
   </span>;
 }
 
-function FrameGrid({ count, active, onSelect, urlFor }: { count: number; active: number; onSelect: (frame: number) => void; urlFor: (frame: number) => string }) {
-  return <div className="frame-grid" aria-label="全部动画帧">{Array.from({ length: count }, (_, index) => <button type="button" key={index} className={active === index ? "active" : ""} onClick={() => onSelect(index)}><img loading="lazy" src={urlFor(index)} alt={`第 ${index + 1} 帧`} /><span>{index + 1}</span></button>)}</div>;
+function FrameGrid({ count, active, onSelect, urlFor, scrollKey }: { count: number; active: number; onSelect: (frame: number) => void; urlFor: (frame: number) => string; scrollKey: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [scrollKey]);
+  return <div ref={scrollRef} className="frame-grid" aria-label="全部动画帧">{Array.from({ length: count }, (_, index) => <button type="button" key={index} className={active === index ? "active" : ""} onClick={() => onSelect(index)}><img loading="lazy" src={urlFor(index)} alt={`第 ${index + 1} 帧`} /><span>{index + 1}</span></button>)}</div>;
 }
 
 function FrameTransport({ frame, count, playing, onPlayingChange, onFrameChange, label = "动画帧", playDisabled = false }: {
@@ -3388,25 +4019,30 @@ function preloadDecodedImageFrame(src: string, priority: ImageFetchPriority = "a
   return promise;
 }
 
-function scheduleDecodedImageFrame(src: string, delayMs: number, onReady: () => void) {
+function scheduleDecodedImageFrames(srcs: string[], delayMs: number, onReady: () => void) {
   let cancelled = false;
   let delayElapsed = false;
-  let imageDecoded = false;
+  let imagesDecoded = false;
   const finish = () => {
-    if (!cancelled && delayElapsed && imageDecoded) onReady();
+    if (!cancelled && delayElapsed && imagesDecoded) onReady();
   };
   const timer = window.setTimeout(() => {
     delayElapsed = true;
     finish();
   }, delayMs);
-  void preloadDecodedImageFrame(src, "high").then(() => {
-    imageDecoded = true;
+  const uniqueSources = [...new Set(srcs.filter(Boolean))];
+  void Promise.all(uniqueSources.map((src) => preloadDecodedImageFrame(src, "high"))).then(() => {
+    imagesDecoded = true;
     finish();
   });
   return () => {
     cancelled = true;
     window.clearTimeout(timer);
   };
+}
+
+function scheduleDecodedImageFrame(src: string, delayMs: number, onReady: () => void) {
+  return scheduleDecodedImageFrames([src], delayMs, onReady);
 }
 
 function DeferredPreviewImage({ src, alt = "" }: { src: string; alt?: string }) {
@@ -3450,7 +4086,10 @@ function animationSourceFramesFromTotal(sample: MediaSample | undefined, totalFr
   const frameStep = Math.max(1, playback.frame_step || 1);
   const frames = Array.from({ length: Math.max(1, count) }, (_, index) => start + index * frameStep)
     .filter((frame) => contentTotal === 0 || frame < contentTotal);
-  return frames.length > 0 ? frames : [Math.min(Math.max(0, start), Math.max(0, contentTotal - 1))];
+  const available = frames.length > 0
+    ? frames
+    : [Math.min(Math.max(0, start), Math.max(0, contentTotal - 1))];
+  return playback.reverse ? [...available].reverse() : available;
 }
 
 function animationSourceFrames(sample: MediaSample | undefined, metadata: AssetMetadata | null, facing: number) {
@@ -3492,12 +4131,22 @@ function preferredBodySequence(associations: MediaAssociation[]) {
     || null;
 }
 
-function defaultBuildingOperationSamples(associations: MediaAssociation[], facing: number) {
+function defaultBuildingOperationSamples(
+  associations: MediaAssociation[],
+  facing: number,
+  activeAnimation: ActiveEntityAnimation | null = null,
+) {
   const seen = new Set<string>();
   const samples: MediaSample[] = [];
+  const excludedAssetId = activeAnimation?.sample.asset?.id;
+  const excludesSuperFamily = activeAnimation?.slot.toLowerCase().startsWith("superanim") || false;
   for (const association of associations) {
+    const slot = association.slot.toLowerCase();
+    const persistent = /^(?:active|idle)anim(?:two|three|four)?$/.test(slot)
+      || slot === "superanim";
+    if (!persistent || (excludesSuperFamily && slot.startsWith("superanim"))) continue;
     for (const sample of animationCardSamples(association, facing)) {
-      if (!sample.asset || sample.asset.format !== "shp" || seen.has(sample.asset.id)) continue;
+      if (!sample.asset || sample.asset.format !== "shp" || sample.asset.id === excludedAssetId || seen.has(sample.asset.id)) continue;
       seen.add(sample.asset.id);
       samples.push(sample);
     }
@@ -3648,7 +4297,7 @@ function CompactAudioPlayer({ assetId, label }: {
   const url = api.mediaUrl(assetId);
 
   return <span className="compact-audio-player">
-    <button type="button" onPointerEnter={() => void preloadAudioResource(url, "foreground")} onFocus={() => void preloadAudioResource(url, "foreground")} onClick={() => toggleAudioAsset(assetId, url)} title={isActive ? `暂停 ${label}` : `播放 ${label}`} aria-label={isActive ? `暂停 ${label}` : `播放 ${label}`}><Icon name={isActive ? "pause" : "play"} size={15} /></button>
+    <button type="button" data-audio-asset-id={assetId} onPointerEnter={() => void preloadAudioResource(url, "foreground")} onFocus={() => void preloadAudioResource(url, "foreground")} onClick={() => toggleAudioAsset(assetId, url)} title={isActive ? `暂停 ${label}` : `播放 ${label}`} aria-label={isActive ? `暂停 ${label}` : `播放 ${label}`}><Icon name={isActive ? "pause" : "play"} size={15} /></button>
   </span>;
 }
 
@@ -3669,35 +4318,65 @@ function StablePreviewImage({ src, alt, style, className, draggable = false, onB
   const [displayedSrc, setDisplayedSrc] = useState(src);
   const requestedSrc = useRef(src);
   const onBeforeRevealRef = useRef(onBeforeReveal);
+  const onLoadRef = useRef(onLoad);
   const onErrorRef = useRef(onError);
+  requestedSrc.current = src;
   onBeforeRevealRef.current = onBeforeReveal;
+  onLoadRef.current = onLoad;
   onErrorRef.current = onError;
 
-  useEffect(() => {
-    requestedSrc.current = src;
-    if (!src || src === displayedSrc) return;
-    let cancelled = false;
-    void preloadDecodedImageFrame(src, "high").then((candidate) => {
-      if (cancelled || requestedSrc.current !== src) return;
-      onBeforeRevealRef.current?.(candidate);
-      setDisplayedSrc(src);
-      if (!candidate.naturalWidth) onErrorRef.current?.();
-    });
-    return () => { cancelled = true; };
-  }, [src, displayedSrc]);
+  function revealPending(image: HTMLImageElement, pendingSrc: string) {
+    const reveal = () => {
+      if (requestedSrc.current !== pendingSrc || !image.naturalWidth) {
+        if (requestedSrc.current === pendingSrc && !image.naturalWidth) onErrorRef.current?.();
+        return;
+      }
+      onBeforeRevealRef.current?.(image);
+      onLoadRef.current?.(image);
+      setDisplayedSrc(pendingSrc);
+    };
+    if (typeof image.decode === "function") void image.decode().catch(() => undefined).then(reveal);
+    else reveal();
+  }
 
-  return <img
-    src={displayedSrc}
-    data-requested-src={src}
-    alt={alt}
-    className={className}
-    draggable={draggable}
-    decoding="async"
-    fetchPriority="high"
-    style={style}
-    onLoad={(event) => onLoad?.(event.currentTarget)}
-    onError={onError}
-  />;
+  const pendingSrc = src && src !== displayedSrc ? src : "";
+  return <>
+    {displayedSrc && <img
+      key={displayedSrc}
+      src={displayedSrc}
+      data-requested-src={src}
+      data-frame-state="active"
+      alt={alt}
+      className={className}
+      draggable={draggable}
+      decoding="async"
+      fetchPriority="high"
+      style={style}
+      onLoad={(event) => {
+        if (requestedSrc.current === displayedSrc) onLoadRef.current?.(event.currentTarget);
+      }}
+      onError={() => {
+        if (requestedSrc.current === displayedSrc) onErrorRef.current?.();
+      }}
+    />}
+    {pendingSrc && <img
+      key={pendingSrc}
+      src={pendingSrc}
+      data-requested-src={src}
+      data-frame-state="pending"
+      alt=""
+      aria-hidden="true"
+      className={`${className || ""} stable-preview-pending`}
+      draggable={false}
+      decoding="async"
+      fetchPriority="high"
+      style={style}
+      onLoad={(event) => revealPending(event.currentTarget, pendingSrc)}
+      onError={() => {
+        if (requestedSrc.current === pendingSrc) onErrorRef.current?.();
+      }}
+    />}
+  </>;
 }
 
 interface ImageFrameFit {
@@ -4090,7 +4769,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   defaultPreviewAngleRef.current = defaultPreviewAngle;
   const facing = shpFacingForPreviewAngle(previewAngle);
   const renderFacing = entity?.preview.supports_facing
-    ? entityFacingForPreviewAngle(entity.preview.format, previewAngle)
+    ? entityFacingForPreviewAngle(entity.preview.facing_format, previewAngle)
     : 0;
   const [playerColor, setPlayerColor] = useState("");
   const [playing, setPlaying] = useState(false);
@@ -4122,7 +4801,11 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   const operationAnimationAssociations = animationAssociations.filter(
     (association) => animationAssociationGroup(entityKind, association) === "operation",
   );
-  const defaultOperationSamples = defaultBuildingOperationSamples(operationAnimationAssociations, facing);
+  const defaultOperationSamples = defaultBuildingOperationSamples(
+    operationAnimationAssociations,
+    facing,
+    activeAnimation,
+  );
   const defaultOperationAssetKey = defaultOperationSamples.map((sample) => sample.asset?.id).join(":");
   const weaponAnimationAssociations = animationAssociations.filter(
     (association) => animationAssociationGroup(entityKind, association) === "weapon",
@@ -4148,9 +4831,12 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
     ? effectBodySequence(animationAssociations, activeAnimation.slot)
     : null;
   const effectBodySample = effectBodyAssociation?.samples.find((sample) => sample.asset) || null;
-  const effectBodyFrames = effectBodySample
-    ? animationSourceFramesFromTotal(effectBodySample, entity?.preview.source_frame_count || 0, facing)
-    : [];
+  const effectBodyFrames = useMemo(
+    () => effectBodySample
+      ? animationSourceFramesFromTotal(effectBodySample, entity?.preview.source_frame_count || 0, facing)
+      : [],
+    [effectBodySample, entity?.preview.source_frame_count, facing],
+  );
   const activeAnimationShadowFrames = activeAnimationFrames
     .map((sourceFrame) => animationShadowFrame(activeAnimation?.sample, animationMetadata, sourceFrame))
     .filter((sourceFrame): sourceFrame is number => sourceFrame !== undefined);
@@ -4190,6 +4876,15 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   const activeAnimationFrameCount = activeAnimation
     ? Math.max(activeAnimationFrames.length, effectBodyFrames.length, 1)
     : activeAnimationFrames.length;
+  const activeAnimationLoops = activeAnimationIsBody
+    || activeAnimation?.sample.animation?.loop_count === -1;
+  const activeAnimationLoopStart = (() => {
+    if (!activeAnimationLoops) return 0;
+    const sourceFrame = activeAnimation?.sample.animation?.loop_start;
+    if (sourceFrame === null || sourceFrame === undefined) return 0;
+    const index = activeAnimationFrames.indexOf(sourceFrame);
+    return index >= 0 ? index : 0;
+  })();
   const activeAnimationSourceFrame = activeAnimationFrames[Math.min(animationFrame, activeAnimationFrames.length - 1)] || 0;
   const activeAnimationShadowFrame = animationShadowFrame(
     activeAnimation?.sample,
@@ -4200,15 +4895,51 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
     ? effectBodyFrames[animationFrame % effectBodyFrames.length]
     : 0;
   const effectFrameVisible = Boolean(activeAnimation && !activeAnimationReplacesBody && animationFrame < activeAnimationFrames.length);
+  function animationPreviewUrls(sequenceFrame: number) {
+    const sample = activeAnimation?.sample;
+    const asset = sample?.asset;
+    if (!sample || !asset || asset.format !== "shp") return [];
+    const sourceFrame = activeAnimationFrames[Math.min(sequenceFrame, activeAnimationFrames.length - 1)] || 0;
+    const shadowFrame = animationShadowFrame(sample, animationMetadata, sourceFrame);
+    if (entity?.kind === "building" && activeAnimation?.role === "operation") {
+      return [api.entityPreviewUrl(sourceId, entity.id, {
+        frame,
+        facing: renderFacing,
+        playerColor,
+        scale: 4,
+        effectAssetId: asset.id,
+        effectFrame: sourceFrame,
+        effectShadowFrame: shadowFrame,
+        effectPalette: sample.palette || undefined,
+        revision: sourceRevision,
+      })];
+    }
+    const urls = sequenceFrame < activeAnimationFrames.length
+      ? [api.previewUrl(asset.id, sourceFrame, "", 5, playerColor, {
+        palette: sample.palette || undefined,
+        shadowFrame,
+      })]
+      : [];
+    if (effectBodySample?.asset?.format === "shp" && effectBodyFrames.length > 0) {
+      const bodySourceFrame = effectBodyFrames[sequenceFrame % effectBodyFrames.length];
+      urls.push(api.previewUrl(
+        effectBodySample.asset.id,
+        bodySourceFrame,
+        "",
+        5,
+        playerColor,
+        { palette: effectBodySample.palette || undefined },
+      ));
+    }
+    return [...new Set(urls)];
+  }
   const associationLayout = detailTab === "animation" ? animationAssociationLayout : soundAssociationLayout;
   const setAssociationLayout = detailTab === "animation" ? setAnimationAssociationLayout : setSoundAssociationLayout;
-  const detailScroll = useRememberedScroll<HTMLElement>(scrollKey, entity ? entity.components.length + entity.media.length : 0, "detail");
-  const connectDetailPanel = useCallback((node: HTMLElement | null) => {
-    if (!wide) detailScroll.ref.current = node;
-  }, [wide, detailScroll.ref]);
-  const connectDetailSections = useCallback((node: HTMLDivElement | null) => {
-    if (wide) detailScroll.ref.current = node;
-  }, [wide, detailScroll.ref]);
+  const detailScroll = useRememberedScroll<HTMLElement, HTMLDivElement>(
+    `${scrollKey}:${detailTab}`,
+    entity ? entity.components.length + entity.media.length : 0,
+  );
+  useResponsiveDetailPageReset(scrollKey, detailScroll.ref);
 
   useEffect(() => {
     setFrame(0);
@@ -4326,20 +5057,15 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
       return;
     }
     if (!animationMetadata && (sample.animation?.shadow || sample.animation?.frame_count === null)) return;
-    const frameUrls = activeAnimationFrames.map((sourceFrame) => api.previewUrl(
-      asset.id,
-      sourceFrame,
-      "",
-      5,
-      playerColor,
-      {
-        palette: sample.palette || undefined,
-        shadowFrame: animationShadowFrame(sample, animationMetadata, sourceFrame),
-      },
-    ));
-    if (frameUrls.length === 0) return;
+    const frameUrlGroups = Array.from(
+      { length: activeAnimationFrameCount },
+      (_, index) => animationPreviewUrls(index),
+    );
+    if (frameUrlGroups.length === 0) return;
     let cancelled = false;
-    const firstFrames = frameUrls.slice(0, 2).map((url) => preloadDecodedImageFrame(url, "high"));
+    const firstFrames = frameUrlGroups.slice(0, 2).map((urls) => Promise.all(
+      urls.map((url) => preloadDecodedImageFrame(url, "high")),
+    ));
     void firstFrames[0].then(() => {
       if (cancelled) return;
       autoStartedAnimationRef.current = activeAnimation;
@@ -4347,10 +5073,12 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
     });
     void Promise.all(firstFrames).then(() => {
       if (cancelled) return;
-      for (const url of frameUrls.slice(2)) void preloadDecodedImageFrame(url, "low");
+      for (const urls of frameUrlGroups.slice(2)) {
+        for (const url of urls) void preloadDecodedImageFrame(url, "low");
+      }
     });
     return () => { cancelled = true; };
-  }, [activeAnimation, activeAnimationFrameCount, activeAnimationFrames, animationMetadata, playerColor]);
+  }, [activeAnimation, activeAnimationFrameCount, activeAnimationFrames, animationMetadata, effectBodyFrames, effectBodySample, entity, frame, renderFacing, playerColor, sourceId, sourceRevision]);
 
   useEffect(() => {
     if (!activeAnimation) return;
@@ -4374,22 +5102,20 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
     if (!animationPlaying || activeAnimationFrameCount < 2) return;
     const requestedRate = activeAnimation?.sample.animation?.rate_ms || 140;
     const interval = Math.min(1000, Math.max(60, requestedRate));
-    const nextFrame = (animationFrame + 1) % activeAnimationFrameCount;
+    if (animationFrame >= activeAnimationFrameCount - 1 && !activeAnimationLoops) {
+      setAnimationPlaying(false);
+      return;
+    }
+    const nextFrame = animationFrame >= activeAnimationFrameCount - 1
+      ? activeAnimationLoopStart
+      : animationFrame + 1;
     const advance = () => setAnimationFrame((current) => current === animationFrame ? nextFrame : current);
-    const animationSample = activeAnimation?.sample;
-    const animationAsset = animationSample?.asset;
-    if (animationAsset?.format === "shp" && animationSample) {
-      const sourceFrame = activeAnimationFrames[Math.min(nextFrame, activeAnimationFrames.length - 1)] || 0;
-      const shadowFrame = animationShadowFrame(animationSample, animationMetadata, sourceFrame);
-      const nextUrl = api.previewUrl(animationAsset.id, sourceFrame, "", 5, playerColor, {
-        palette: animationSample.palette || undefined,
-        shadowFrame,
-      });
-      return scheduleDecodedImageFrame(nextUrl, interval, advance);
+    if (activeAnimation?.sample.asset?.format === "shp") {
+      return scheduleDecodedImageFrames(animationPreviewUrls(nextFrame), interval, advance);
     }
     const timer = window.setTimeout(advance, interval);
     return () => window.clearTimeout(timer);
-  }, [animationPlaying, animationFrame, activeAnimationFrameCount, activeAnimation, activeAnimationFrames, animationMetadata, playerColor]);
+  }, [animationPlaying, animationFrame, activeAnimationFrameCount, activeAnimationLoops, activeAnimationLoopStart, activeAnimation, activeAnimationFrames, animationMetadata, effectBodyFrames, effectBodySample, entity, frame, renderFacing, playerColor, sourceId, sourceRevision]);
 
   if (loading && !entity) return <aside className="detail-panel panel empty-detail"><div className="radar small"><span /></div><strong>正在读取单位详情…</strong></aside>;
   if (!entity) return <aside className="detail-panel panel empty-detail"><div className="empty-detail-icon"><Icon name="unit" size={30} /></div><strong>选择单位</strong></aside>;
@@ -4424,7 +5150,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   const animationGroupLabels: Record<EntityAnimationGroup, string> = {
     body: entity.voxel ? "模型姿态" : "主体动作",
     construction: "建造",
-    operation: "运行",
+    operation: "运转与状态",
     weapon: "开火效果",
     impact: "命中特效",
     destruction: "摧毁爆炸",
@@ -4464,21 +5190,44 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
       palette: effectBodySample?.palette || undefined,
     })
     : "";
-  const buildingOperationPreviewUrl = !isStaticSnapshot
-    && entity.kind === "building"
+  const buildingOperationPreviewUrl = entity.kind === "building"
     && activeAnimation?.role === "operation"
     && activeAnimationAsset?.format === "shp"
     ? api.entityPreviewUrl(sourceId, entity.id, {
       frame,
-      facing,
+      facing: renderFacing,
       playerColor,
       scale: 4,
       effectAssetId: activeAnimationAsset.id,
       effectFrame: activeAnimationSourceFrame,
       effectShadowFrame: activeAnimationShadowFrame,
       effectPalette: activeAnimation.sample.palette || undefined,
+      revision: sourceRevision,
     })
     : "";
+  const animationCardPreviewUrl = (association: MediaAssociation, sample: MediaSample) => {
+    if (!sample.asset || !["shp", "tmp", "pcx"].includes(sample.asset.format)) return "";
+    if (entity.kind === "building" && association.role === "operation" && sample.asset.format === "shp") {
+      return api.entityPreviewUrl(sourceId, entity.id, {
+        frame: 0,
+        facing: renderFacing,
+        playerColor,
+        scale: 2,
+        effectAssetId: sample.asset.id,
+        effectFrame: sample.animation?.start_frame || 0,
+        effectPalette: sample.palette || undefined,
+        revision: sourceRevision,
+      });
+    }
+    return api.previewUrl(
+      sample.asset.id,
+      sample.animation?.start_frame || 0,
+      "",
+      2,
+      playerColor,
+      { palette: sample.palette || undefined },
+    );
+  };
   const effectAnchor = animationEffectAnchor(
     activeAnimation?.role || null,
     entity.art,
@@ -4505,7 +5254,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
     (slot) => ({ slot, items: entity.dependencies.filter((item) => item.slot === slot) }),
   );
   return (
-    <aside ref={connectDetailPanel} onScroll={wide ? undefined : detailScroll.remember} aria-busy={loading} className={`detail-panel entity-detail panel ${wide ? "entity-detail-wide" : "entity-detail-narrow"}`}>
+    <aside ref={detailScroll.ref} onScroll={detailScroll.remember} aria-busy={loading} className={`detail-panel entity-detail panel ${wide ? "entity-detail-wide" : "entity-detail-narrow"}`}>
       <div className="entity-detail-body">
         <div className="entity-preview-column">
           {entity.renderable ? <div className="preview-block entity-preview">
@@ -4516,7 +5265,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
                 : buildingOperationPreviewUrl
                   ? <ImageViewport className="shp entity-body-action-stage" fitKey={`${entity.id}:operation:${activeAnimationAsset?.id || "effect"}`} frameFit={buildingOperationFrameFit} src={buildingOperationPreviewUrl} alt={`${activeAnimationTitle}组合预览`} building />
                   : !activeAnimationAsset && frameMode === "grid" && hasRawBodyAnimation
-                    ? <FrameGrid count={frameCount} active={frame} onSelect={setFrame} urlFor={(index) => api.entityPreviewUrl(sourceId, entity.id, { frame: index, facing: renderFacing, playerColor, scale: 3 })} />
+                    ? <FrameGrid count={frameCount} active={frame} onSelect={setFrame} scrollKey={`${entity.id}:${renderFacing}:${playerColor}`} urlFor={(index) => api.entityPreviewUrl(sourceId, entity.id, { frame: index, facing: renderFacing, playerColor, scale: 3 })} />
                     : <div className="entity-composite-stage">
                     {effectBodyPreviewUrl
                       ? <ImageViewport className="shp entity-composite-body" fitKey={`${entity.id}:${effectBodyAssociation?.event || "body"}`} frameFit={effectBodyFrameFit} src={effectBodyPreviewUrl} alt={`${entity.display_name} 主体动作`} building={entity.kind === "building"} />
@@ -4531,7 +5280,10 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
                     </div>}
             {(activeAnimationAsset || hasRawBodyAnimation) && <div className="entity-preview-controls">
               {activeAnimationAsset && activeAnimationFrameCount > 1
-                ? <div className="frame-controls"><FrameTransport frame={animationFrame} count={activeAnimationFrameCount} playing={animationPlaying} onPlayingChange={setAnimationPlaying} onFrameChange={setAnimationFrame} label="帧" /></div>
+                ? <div className="frame-controls"><FrameTransport frame={animationFrame} count={activeAnimationFrameCount} playing={animationPlaying} onPlayingChange={(next) => {
+                  if (next && animationFrame >= activeAnimationFrameCount - 1 && !activeAnimationLoops) setAnimationFrame(0);
+                  setAnimationPlaying(next);
+                }} onFrameChange={setAnimationFrame} label="帧" /></div>
                 : !activeAnimationAsset && hasRawBodyAnimation && <div className="frame-controls">
                   {frameMode === "sequence" && <FrameTransport frame={frame} count={frameCount} playing={playing} onPlayingChange={setPlaying} onFrameChange={setFrame} label="帧" />}
                   <div className="frame-mode-toggle"><button className={frameMode === "sequence" ? "active" : ""} onClick={() => setFrameMode("sequence")} title="顺序播放"><Icon name="play" size={14} /></button><button className={frameMode === "grid" ? "active" : ""} onClick={() => { setPlaying(false); setFrameMode("grid"); }} title="全部帧"><Icon name="grid" size={14} /></button></div>
@@ -4549,12 +5301,12 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
           </div> : <div className="unsupported-preview"><Icon name="unit" size={34} /><strong>{entityBodyStatusLabel(entity)}</strong></div>}
         </div>
 
-        <div ref={connectDetailSections} onScroll={wide ? detailScroll.remember : undefined} className="entity-detail-sections">
+        <div ref={detailScroll.alternateRef} onScroll={detailScroll.remember} className="entity-detail-sections">
           <div className="detail-title entity-detail-title"><div className="detail-heading-line"><h2 title={entity.display_name}>{entity.display_name}</h2><small>{entity.id} · {entity.internal_name}</small></div><div className="detail-actions">{detailTab !== "data" && <LayoutToggle layout={associationLayout} onChange={setAssociationLayout} />}{onPopout && <button type="button" className="icon-button" onClick={onPopout} title="在独立窗口中打开" aria-label="在独立窗口中打开"><Icon name="popout" /></button>}</div></div>
           <div className="entity-detail-tabs" role="tablist" aria-label="单位详细信息">
-            <button type="button" role="tab" id="entity-sound-tab" aria-controls="entity-sound-panel" aria-selected={detailTab === "sound"} className={detailTab === "sound" ? "active" : ""} disabled={soundCount === 0} onClick={() => { setDetailTab("sound"); if (detailScroll.ref.current) detailScroll.ref.current.scrollTop = 0; }}>声音 <em>{soundCount}</em></button>
-            <button type="button" role="tab" id="entity-animation-tab" aria-controls="entity-animation-panel" aria-selected={detailTab === "animation"} className={detailTab === "animation" ? "active" : ""} disabled={animationCount === 0} onClick={() => { setDetailTab("animation"); if (detailScroll.ref.current) detailScroll.ref.current.scrollTop = 0; }}>动画 <em>{animationCount}</em></button>
-            <button type="button" role="tab" id="entity-data-tab" aria-controls="entity-data-panel" aria-selected={detailTab === "data"} className={detailTab === "data" ? "active" : ""} onClick={() => { setDetailTab("data"); if (detailScroll.ref.current) detailScroll.ref.current.scrollTop = 0; }}>数据 <em>{dataCount}</em></button>
+            <button type="button" role="tab" id="entity-sound-tab" aria-controls="entity-sound-panel" aria-selected={detailTab === "sound"} className={detailTab === "sound" ? "active" : ""} disabled={soundCount === 0} onClick={() => setDetailTab("sound")}>声音 <em>{soundCount}</em></button>
+            <button type="button" role="tab" id="entity-animation-tab" aria-controls="entity-animation-panel" aria-selected={detailTab === "animation"} className={detailTab === "animation" ? "active" : ""} disabled={animationCount === 0} onClick={() => setDetailTab("animation")}>动画 <em>{animationCount}</em></button>
+            <button type="button" role="tab" id="entity-data-tab" aria-controls="entity-data-panel" aria-selected={detailTab === "data"} className={detailTab === "data" ? "active" : ""} onClick={() => setDetailTab("data")}>数据 <em>{dataCount}</em></button>
           </div>
 
           {detailTab === "sound" && <section className="entity-tab-panel entity-sounds" role="tabpanel" id="entity-sound-panel" aria-labelledby="entity-sound-tab">
@@ -4573,7 +5325,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
                 <div className={`animation-association-list ${associationLayout === "grid" ? "animation-association-grid" : ""}`}>
                   {group === "body" && hasRawBodyAnimation && <button type="button" className={!activeAnimation ? "active" : ""} onClick={() => { setActiveAnimation(null); setFrameMode("sequence"); setPlaying(true); }}><span className="animation-thumbnail body-action"><Icon name="unit" size={24} /></span><span><strong>{rawBodyAnimationTitle}</strong><small>{rawBodyAnimationMeta}</small></span><Icon name="play" size={16} /></button>}
                   {animationGroups[group].flatMap((association) => animationCardSamples(association, facing).map((sample, index) => <button type="button" disabled={!sample.asset} className={activeAnimation?.event === association.event && activeAnimation.slot === association.slot && activeAnimation.source === association.source && activeAnimation.ruleField === association.rule_field && activeAnimation.sample.name === sample.name ? "active" : ""} onClick={() => { if (!sample.asset) return; setPlaying(false); setActiveAnimation({ event: association.event, slot: association.slot, source: association.source, ruleField: association.rule_field, role: association.role, sample }); }} key={`${association.slot}-${association.source}-${association.rule_field}-${association.event}-${sample.name}-${index}`}>
-                    <span className={`animation-thumbnail ${association.role === "body" || association.role === "construction" ? "body-action" : ""}`}>{sample.asset && ["shp", "tmp", "pcx"].includes(sample.asset.format) ? <DeferredPreviewImage src={api.previewUrl(sample.asset.id, sample.animation?.start_frame || 0, "", 2, playerColor, { palette: sample.palette || undefined })} /> : <Icon name="image" size={24} />}</span>
+                    <span className={`animation-thumbnail ${association.role === "body" || association.role === "construction" ? "body-action" : ""}`}>{animationCardPreviewUrl(association, sample) ? <DeferredPreviewImage src={animationCardPreviewUrl(association, sample)} /> : <Icon name="image" size={24} />}</span>
                     <span><strong>{animationAssociationTitle(association)}</strong><small title={animationAssociationAliasTitle(association)}>{animationAssociationMeta(association, sample)}</small></span><Icon name="play" size={16} />
                   </button>))}
                 </div>
@@ -4665,7 +5417,11 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
     const remembered = window.localStorage.getItem("ra2exp-audio-detail-tab-v1");
     return remembered === "data" ? "data" : "associations";
   });
-  const detailScroll = useRememberedScroll<HTMLElement>(scrollKey, associations?.items.length || 0, "detail");
+  const detailScroll = useRememberedScroll<HTMLElement>(
+    `${scrollKey}:${asset && audioFormats.includes(asset.format) ? audioDetailTab : "main"}`,
+    associations?.items.length || 0,
+  );
+  useResponsiveDetailPageReset(scrollKey, detailScroll.ref);
   function selectAudioDetailTab(next: AudioDetailTab) {
     setAudioDetailTab(next);
     window.localStorage.setItem("ra2exp-audio-detail-tab-v1", next);
@@ -4684,6 +5440,14 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
   const audioRelationshipItems = isAudio
     ? (associations?.items || []).filter((item) => item.entity !== null)
     : [];
+  const unitIntroEntity = isAudio
+    ? audioRelationshipItems.find((item) => /^unit_(?:eva|sofia)_/i.test(item.event))?.entity ?? null
+    : null;
+  const detailHeading = unitIntroEntity
+    ? [unitIntroEntity.display_name, unitIntroEntity.internal_name]
+      .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
+      .join(" · ")
+    : assetDisplayName(asset);
   const hasAudioRelationshipTabs = isAudio && audioRelationshipItems.length > 0;
   const activeAudioDetailTab = audioDetailTab === "associations" && !hasAudioRelationshipTabs
     ? "data"
@@ -4704,18 +5468,18 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
   const activeLimb = metadata?.limbs?.[frame];
   const hasFrameControl = ["shp", "tmp", "hva"].includes(asset.format) && frameCount > 1;
   const canChoosePalette = ["shp", "vxl", "hva", "tmp"].includes(asset.format) && palettes.length > 0;
-  const originalTexts = [...new Set([
+  const originalTexts = uniqueAudioTexts([
     ...(associations?.original_texts || []),
     ...(associations?.items || []).map((item) => item.original_text || (item.localized_text ? null : item.text)).filter((item): item is string => Boolean(item)),
     ...(associations && associations.original_texts.length === 0 && associations.localized_texts.length === 0
       ? associations.texts
       : []),
-  ])];
+  ]);
   const originalTextKeys = new Set(originalTexts.map((item) => item.trim().replace(/\s+/g, " ").toLocaleLowerCase()));
-  const localizedTexts = [...new Set([
+  const localizedTexts = uniqueAudioTexts([
     ...(associations?.localized_texts || []),
     ...(associations?.items || []).map((item) => item.localized_text).filter((item): item is string => Boolean(item)),
-  ])]
+  ])
     .filter((item) => !originalTextKeys.has(item.trim().replace(/\s+/g, " ").toLocaleLowerCase()));
   const metadataRows: Array<{ label: string; value: string; tone?: string; span?: 1 | 2 | 3 }> = isAudio
     ? []
@@ -4767,7 +5531,7 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
   return (
     <aside ref={detailScroll.ref} onScroll={detailScroll.remember} className={`detail-panel asset-detail panel ${wide ? "detail-panel-wide" : "detail-panel-narrow"}`}>
       <div className={`detail-title ${isAudio ? "audio-detail-title" : ""}`}>
-        <div className="detail-heading-line"><span className="format-pill">{formatLabels[asset.format] || asset.format.toUpperCase()}</span><h2 title={assetDisplayName(asset)}>{assetDisplayName(asset)}</h2></div>
+        <div className="detail-heading-line"><span className="format-pill">{formatLabels[asset.format] || asset.format.toUpperCase()}</span><h2 title={detailHeading}>{detailHeading}</h2></div>
         <div className="detail-actions">
           {onPopout && <button type="button" className="icon-button" onClick={onPopout} title="在独立窗口中打开" aria-label="在独立窗口中打开"><Icon name="popout" /></button>}
           {isAudio
@@ -4787,7 +5551,7 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
 
       {isModel && <div className="preview-block">
         {frameMode === "grid" && asset.format === "hva" && frameCount > 1
-          ? <FrameGrid count={frameCount} active={frame} onSelect={setFrame} urlFor={(index) => api.previewUrl(asset.id, index, paletteId, 3, playerColor)} />
+          ? <FrameGrid count={frameCount} active={frame} onSelect={setFrame} scrollKey={`${asset.id}:${paletteId}:${playerColor}`} urlFor={(index) => api.previewUrl(asset.id, index, paletteId, 3, playerColor)} />
           : <VoxelPreview url={api.assetModelUrl(asset.id, frame, playerColor, paletteId)} label={asset.display_name} viewKey={`asset:${asset.id}`} />}
         {asset.format === "hva" && hasFrameControl && <div className="frame-controls">
           {frameMode === "sequence" && <FrameTransport frame={frame} count={frameCount} playing={playing} onPlayingChange={setPlaying} onFrameChange={setFrame} label="帧" />}
@@ -4798,7 +5562,7 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
       {canPreview && (
         <div className="preview-block">
           {frameMode === "grid" && asset.format === "shp" && frameCount > 1
-            ? <FrameGrid count={frameCount} active={frame} onSelect={setFrame} urlFor={(index) => {
+            ? <FrameGrid count={frameCount} active={frame} onSelect={setFrame} scrollKey={`${asset.id}:${paletteId}:${playerColor}`} urlFor={(index) => {
               const source = shpFrames[index] ?? 0;
               return api.previewUrl(asset.id, source, paletteId, 3, playerColor, { shadowFrame: metadata?.frames?.[source]?.paired_shadow_frame ?? undefined });
             }} />
@@ -4825,13 +5589,17 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
 
       {associations && (isAudio ? audioRelationshipItems : associations.items).length > 0 && (!isAudio || activeAudioDetailTab === "associations") && <div className="asset-associations" role={isAudio ? "tabpanel" : undefined} id={isAudio ? "audio-associations-panel" : undefined} aria-labelledby={isAudio ? "audio-associations-tab" : undefined}>
         <h3>关联事件</h3>
-        <div>{(isAudio ? audioRelationshipItems : associations.items).map((item, index) => <article key={`${item.scope}-${item.event}-${item.slot}-${index}`}>
-          <span>{mediaSlotLabel(item.slot)}</span>
-          <strong>{item.entity?.display_name || item.event}</strong>
-          {item.entity && <code>{item.event}</code>}
-          {(item.original_text || item.text) && <p><b>原文</b>{item.original_text || item.text}</p>}
-          {item.localized_text && item.localized_text !== (item.original_text || item.text) && <p><b>中文</b>{item.localized_text}</p>}
-        </article>)}</div>
+        <div>{(isAudio ? audioRelationshipItems : associations.items).map((item, index) => {
+          const originalText = cleanAudioText(item.original_text || item.text || "");
+          const localizedText = cleanAudioText(item.localized_text || "");
+          return <article key={`${item.scope}-${item.event}-${item.slot}-${index}`}>
+            <span>{mediaSlotLabel(item.slot)}</span>
+            <strong>{item.entity?.display_name || item.event}</strong>
+            {item.entity && <code>{item.event}</code>}
+            {originalText && <p><b>原文</b>{originalText}</p>}
+            {localizedText && localizedText !== originalText && <p><b>中文</b>{localizedText}</p>}
+          </article>;
+        })}</div>
       </div>}
 
       {!canPreview && !isText && !isAudio && !isModel && asset.format !== "video" && <div className="unsupported-preview"><Icon name={assetIcon(asset.format)} size={34} /><strong>{formatLabels[asset.format] || asset.format.toUpperCase()}</strong></div>}
@@ -4956,8 +5724,8 @@ function SettingsDialog({
             {isStaticSnapshot && <div className="settings-build-info" role="status">
               <Icon name="info" size={17} />
               <span><strong>精简网页版</strong><small className="settings-build-meta">
-                {buildInfo.commitUrl
-                  ? <a href={buildInfo.commitUrl} target="_blank" rel="noreferrer" title={buildInfo.commit}>{buildInfo.revision}</a>
+                {buildInfo.revisionUrl
+                  ? <a href={buildInfo.revisionUrl} target="_blank" rel="noreferrer" title={buildInfo.revisionTitle}>{buildInfo.revision}</a>
                   : <span>{buildInfo.revision}</span>}
                 {buildInfo.stableDistance && <span>· {buildInfo.stableDistance}</span>}
                 {buildInfo.updated && <span>· 更新于 {buildInfo.updated}</span>}
@@ -5089,6 +5857,7 @@ function DetachedEntityDetail({ sourceId, entityId }: { sourceId: string; entity
       isStaticSnapshot ? Promise.resolve([] as PlayerColor[]) : api.playerColors(),
     ])
       .then(([nextEntity, nextColors]) => {
+        preloadEntityAudioResources(nextEntity);
         setEntity(nextEntity);
         setColors(nextColors);
         document.title = `${nextEntity.display_name} · RA2 Explorer`;
@@ -5143,7 +5912,7 @@ function DetachedAssetDetail({ assetId }: { assetId: string }) {
   const previewUrl = asset && imageFormats.includes(asset.format)
     ? api.previewUrl(asset.id, frame, paletteId, asset.format === "pcx" ? 1 : asset.format === "shp" ? 5 : 4)
     : "";
-  return <main className="detached-shell">{error ? <div className="detached-error">{error}</div> : <DetailPanel asset={asset} metadata={metadata} textAsset={textAsset} textQuery={textQuery} setTextQuery={setTextQuery} frame={frame} setFrame={setFrame} playing={playing} setPlaying={setPlaying} palettes={palettes} paletteId={paletteId} setPaletteId={setPaletteId} playerColors={colors} previewUrl={previewUrl} associations={associations} wide />}</main>;
+  return <main className="detached-shell">{error ? <div className="detached-error">{error}</div> : <DetailPanel asset={asset} metadata={metadata} textAsset={textAsset} textQuery={textQuery} setTextQuery={setTextQuery} frame={frame} setFrame={setFrame} playing={playing} setPlaying={setPlaying} palettes={palettes} paletteId={paletteId} setPaletteId={setPaletteId} playerColors={colors} previewUrl={previewUrl} associations={associations} wide scrollKey={`detached-asset:${assetId}`} />}</main>;
 }
 
 function App() {

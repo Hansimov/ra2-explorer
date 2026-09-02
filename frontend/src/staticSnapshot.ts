@@ -28,7 +28,7 @@ interface StaticAssetBundle {
 }
 
 interface StaticSnapshotManifest {
-  schema_version: 1;
+  schema_version: 1 | 2;
   snapshot_id: string;
   created_at: string;
   app_version: string;
@@ -63,7 +63,8 @@ function isExternalSnapshotPath(path: string) {
   const normalized = path.replace(/^\/+/, "");
   return normalized === "manifest.json"
     || normalized.startsWith("catalog/")
-    || normalized.startsWith("previews/entity-atlases/");
+    || normalized.startsWith("previews/entity-atlases/")
+    || normalized.startsWith("previews/entity-search-atlases/");
 }
 
 function snapshotUrl(path: string) {
@@ -107,7 +108,8 @@ function searchText(value: unknown) {
 }
 
 function normalizeSearchText(value: string) {
-  return [...value.toLocaleLowerCase()].filter((character) => /[\p{L}\p{N}]/u.test(character)).join("");
+  return [...value.toLocaleLowerCase().replaceAll("砲", "炮")]
+    .filter((character) => /[\p{L}\p{N}]/u.test(character)).join("");
 }
 
 function searchQueryTokens(value: string) {
@@ -152,6 +154,42 @@ function boundedSubsequence(needle: string, haystack: string) {
   return false;
 }
 
+function singleEditOrTransposition(left: string, right: string) {
+  if (Math.abs(left.length - right.length) > 1) return false;
+  if (left.length === right.length) {
+    const differences = [...left].map((character, index) => character === right[index] ? -1 : index)
+      .filter((index) => index >= 0);
+    if (differences.length <= 1) return true;
+    return differences.length === 2
+      && differences[1] === differences[0] + 1
+      && left[differences[0]] === right[differences[1]]
+      && left[differences[1]] === right[differences[0]];
+  }
+  const [shorter, longer] = left.length < right.length ? [left, right] : [right, left];
+  let mismatch = 0;
+  let shortIndex = 0;
+  for (const character of longer) {
+    if (shortIndex < shorter.length && shorter[shortIndex] === character) {
+      shortIndex += 1;
+      continue;
+    }
+    mismatch += 1;
+    if (mismatch > 1) return false;
+  }
+  return true;
+}
+
+function nearbySingleEdit(needle: string, haystack: string) {
+  const hasHan = /\p{Script=Han}/u.test(needle);
+  if (needle.length < (hasHan ? 3 : 5)) return false;
+  for (let width = Math.max(1, needle.length - 1); width <= needle.length + 1; width += 1) {
+    for (let start = 0; start + width <= haystack.length; start += 1) {
+      if (singleEditOrTransposition(needle, haystack.slice(start, start + width))) return true;
+    }
+  }
+  return false;
+}
+
 function fuzzyEntityMatch(query: string, item: EntityPage["items"][number] | undefined) {
   const needle = normalizeSearchText(query);
   if (!item || !allowsFuzzyMatch(needle)) return false;
@@ -165,7 +203,8 @@ function fuzzyEntityMatch(query: string, item: EntityPage["items"][number] | und
     item.search_aliases?.pinyin_initials || "",
   ].some((value) => {
     const haystack = normalizeSearchText(value);
-    return haystack.length <= Math.max(64, needle.length * 8) && boundedSubsequence(needle, haystack);
+    return haystack.length <= Math.max(64, needle.length * 8)
+      && (boundedSubsequence(needle, haystack) || nearbySingleEdit(needle, haystack));
   });
 }
 
@@ -193,7 +232,8 @@ function mediaSearchTokenMatch(token: string, item: MediaItem | undefined) {
   const needle = normalizeSearchText(token);
   if (allowsFuzzyMatch(needle) && mediaSearchValues(item).some((value) => {
     const haystack = normalizeSearchText(value);
-    return haystack.length <= Math.max(64, needle.length * 8) && boundedSubsequence(needle, haystack);
+    return haystack.length <= Math.max(64, needle.length * 8)
+      && (boundedSubsequence(needle, haystack) || nearbySingleEdit(needle, haystack));
   })) return true;
   if (!/^[a-z0-9]+$/i.test(needle) || needle.length < 2) return false;
   return [

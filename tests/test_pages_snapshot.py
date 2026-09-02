@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
 
 from ra2_explorer.errors import Ra2ExplorerError
 from ra2_explorer.pages_snapshot import (
+    PAGES_ASSET_BUNDLE_REVISION,
     PAGES_RENDER_REVISION,
     _animation_frame_requests,
     _AnimationVariant,
@@ -16,8 +18,14 @@ from ra2_explorer.pages_snapshot import (
     _AssetUsage,
     _composite_entity_preview_layers,
     _directory_stats,
+    _entity_operation_effect_tasks,
     _entity_player_color,
+    _entity_search_thumbnail_cell,
     _entity_thumbnail_atlas_cell,
+    _EntityPreviewTask,
+    _export_asset_bundles,
+    _export_entity_previews,
+    _export_entity_search_thumbnail_atlases,
     _export_entity_thumbnail_atlases,
     _pages_audio_stats,
     _prune_reused_exports,
@@ -27,14 +35,14 @@ from ra2_explorer.pages_snapshot import (
 )
 
 
-def test_pages_default_preload_atlas_matches_render_revision() -> None:
+def test_pages_default_preload_search_atlas_matches_render_revision() -> None:
     pages_env = (Path(__file__).parents[1] / "frontend" / ".env.pages").read_text(
         encoding="utf-8",
     )
 
     assert (
         "RA2EXP_DEFAULT_ATLAS="
-        f"previews/entity-atlases/vehicle/0-r{PAGES_RENDER_REVISION}.webp"
+        f"previews/entity-search-atlases/1-r{PAGES_RENDER_REVISION}.webp"
     ) in pages_env
 
 
@@ -57,6 +65,49 @@ def test_pages_prune_removes_only_stale_reused_exports(tmp_path: Path) -> None:
     assert removed == 1
     assert expected.read_bytes() == b"expected"
     assert not stale.exists()
+
+
+def test_pages_asset_bundle_reuse_requires_current_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "assets" / "sample.json"
+    output.parent.mkdir(parents=True)
+    output.write_text(
+        json.dumps({"metadata": {"stale": True}}),
+        encoding="utf-8",
+    )
+    requests: list[str] = []
+
+    def request(_client: object, path: str, **_kwargs: object) -> dict[str, object]:
+        requests.append(path)
+        if path.endswith("/metadata"):
+            return {"fresh": True}
+        return {"id": "sample", "format": "wav"}
+
+    monkeypatch.setattr("ra2_explorer.pages_snapshot._request_json", request)
+    metadata = _export_asset_bundles(
+        object(),  # type: ignore[arg-type]
+        tmp_path,
+        {"sample": {"id": "sample"}},
+        set(),
+        workers=1,
+    )
+
+    assert metadata == {"sample": {"fresh": True}}
+    assert requests == ["/api/assets/sample", "/api/assets/sample/metadata"]
+    bundle = json.loads(output.read_text(encoding="utf-8"))
+    assert bundle["bundle_revision"] == PAGES_ASSET_BUNDLE_REVISION
+
+    requests.clear()
+    assert _export_asset_bundles(
+        object(),  # type: ignore[arg-type]
+        tmp_path,
+        {"sample": {"id": "sample"}},
+        set(),
+        workers=1,
+    ) == {"sample": {"fresh": True}}
+    assert requests == []
 
 
 def test_pages_asset_usages_exclude_incomplete_combat_effects() -> None:
@@ -156,6 +207,58 @@ def test_animation_frame_requests_support_interleaved_unit_actions() -> None:
     assert ("unit", 8, None) in requests
 
 
+def test_pages_exports_precomposited_building_operation_frames(tmp_path: Path) -> None:
+    entities = [
+        {
+            "id": "SUPERBUILDING",
+            "kind": "building",
+            "renderable": True,
+            "sides": ["GDI"],
+            "preview": {"supports_facing": False},
+            "media": [
+                {
+                    "kind": "animation",
+                    "role": "operation",
+                    "slot": "superanimtwo",
+                    "samples": [
+                        {
+                            "asset": {"id": "effect", "format": "shp"},
+                            "palette": "unit",
+                            "animation": {
+                                "start_frame": 0,
+                                "frame_count": 2,
+                                "facing_step": 0,
+                                "frame_step": 1,
+                                "shadow": True,
+                                "reverse": False,
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+    metadata = {
+        "effect": {
+            "frame_count": 4,
+            "frames": [
+                {"index": 0, "paired_shadow_frame": 2},
+                {"index": 1, "paired_shadow_frame": 3},
+            ],
+        }
+    }
+
+    tasks = _entity_operation_effect_tasks(tmp_path, "source", entities, metadata)
+
+    assert len(tasks) == 3
+    paired = next(task for task in tasks if task.params.get("effect_shadow_frame") == 2)
+    assert paired.params["player_color"] == "blue"
+    assert paired.output == (
+        tmp_path
+        / "previews/entities/SUPERBUILDING/effects/effect/unit/0/0-shadow-2.webp"
+    )
+
+
 def test_snapshot_identity_excludes_local_display_values() -> None:
     source = {
         "id": "source-id",
@@ -228,6 +331,87 @@ def test_pages_building_preview_focus_includes_every_visible_main_layer() -> Non
     assert focus == (90, 40, 190, 60)
 
 
+def test_pages_entity_preview_includes_the_shared_voxel_turret_composite(
+    tmp_path: Path,
+) -> None:
+    body = {"format": "shp", "source_id": "source"}
+
+    class Entity:
+        kind = "building"
+        rules: dict[str, str] = {}
+        media: tuple[object, ...] = ()
+
+        @staticmethod
+        def component(role: str) -> dict[str, str] | None:
+            return body if role == "body" else None
+
+    entity = Entity()
+    base = Image.new("RGBA", (40, 40), (255, 0, 0, 255))
+    turret = Image.new("RGBA", (10, 10), (0, 0, 255, 255))
+    semantic = SimpleNamespace(
+        catalog=lambda _source_id: SimpleNamespace(get=lambda _entity_id: entity),
+        render=lambda *_args, **_kwargs: (entity, base, (0, 0, 40, 40)),
+        render_building_voxel_turret=lambda *_args, **_kwargs: (turret, (5, 5)),
+    )
+    services = SimpleNamespace(
+        semantic=semantic,
+        database=SimpleNamespace(palette_assets=lambda _source_id: []),
+    )
+    output = tmp_path / "building.webp"
+
+    _export_entity_previews(
+        services,  # type: ignore[arg-type]
+        "source",
+        [_EntityPreviewTask("BUILDING", 0, 0, 2, False, None, output)],
+        workers=1,
+    )
+
+    with Image.open(output) as rendered:
+        assert rendered.convert("RGBA").getpixel((20, 20))[:3] == (0, 0, 255)
+
+
+def test_pages_infantry_thumbnail_uses_the_shared_card_framing(tmp_path: Path) -> None:
+    body = {"format": "shp", "source_id": "source"}
+
+    class Entity:
+        kind = "infantry"
+        rules: dict[str, str] = {}
+        media: tuple[object, ...] = ()
+
+        @staticmethod
+        def component(role: str) -> dict[str, str] | None:
+            return body if role == "body" else None
+
+    entity = Entity()
+    base = Image.new("RGBA", (20, 40), (255, 0, 0, 255))
+    semantic = SimpleNamespace(
+        catalog=lambda _source_id: SimpleNamespace(get=lambda _entity_id: entity),
+        render=lambda *_args, **_kwargs: (entity, base, (0, 0, 20, 40)),
+        render_building_voxel_turret=lambda *_args, **_kwargs: None,
+    )
+    services = SimpleNamespace(
+        semantic=semantic,
+        database=SimpleNamespace(palette_assets=lambda _source_id: []),
+    )
+    output = tmp_path / "infantry.webp"
+
+    _export_entity_previews(
+        services,  # type: ignore[arg-type]
+        "source",
+        [_EntityPreviewTask("INFANTRY", 0, 0, 2, True, None, output)],
+        workers=1,
+    )
+
+    with Image.open(output) as rendered:
+        bounds = rendered.convert("RGBA").getchannel("A").getbbox()
+        assert bounds is not None
+        visible_ratio = max(
+            (bounds[2] - bounds[0]) / rendered.width,
+            (bounds[3] - bounds[1]) / rendered.height,
+        )
+        assert 0.68 <= visible_ratio <= 0.75
+
+
 def test_pages_thumbnail_atlas_cell_matches_card_dimensions() -> None:
     source = Image.new("RGBA", (20, 10), (255, 0, 0, 255))
 
@@ -235,6 +419,15 @@ def test_pages_thumbnail_atlas_cell_matches_card_dimensions() -> None:
 
     assert cell.size == (144, 135)
     assert cell.getchannel("A").getbbox() == (10, 33, 134, 95)
+
+
+def test_pages_search_thumbnail_cell_is_centered_and_pre_fitted() -> None:
+    source = Image.new("RGBA", (20, 10), (255, 0, 0, 255))
+
+    cell = _entity_search_thumbnail_cell(source)
+
+    assert cell.size == (36, 36)
+    assert cell.getchannel("A").getbbox() == (2, 10, 34, 26)
 
 
 def test_pages_entity_card_player_colors_follow_exclusive_side() -> None:
@@ -256,6 +449,7 @@ def test_pages_exports_one_thumbnail_atlas_request_per_entity_kind(
     for entity_id, kind, supports_facing in (
         ("TANK", "vehicle", True),
         ("SOLDIER", "infantry", True),
+        ("CANNON", "building", True),
     ):
         facing_count = 8 if supports_facing else 1
         for facing in range(facing_count):
@@ -289,15 +483,85 @@ def test_pages_exports_one_thumbnail_atlas_request_per_entity_kind(
 
     metadata = _export_entity_thumbnail_atlases(tmp_path, entities)
 
-    assert metadata["TANK"]["facing_count"] == 1
+    assert metadata["TANK"]["facing_count"] == 8
     assert metadata["SOLDIER"]["facing_count"] == 8
+    assert metadata["CANNON"]["facing_count"] == 8
+    assert metadata["SOLDIER"]["content_bounds"] == [
+        {"x": 10, "y": 22, "width": 124, "height": 83}
+    ] * 8
     assert metadata["SOLDIER"]["path"] == (
-        "previews/entity-atlases/infantry/{facing}-r4.webp"
+        f"previews/entity-atlases/infantry/{{facing}}-r{PAGES_RENDER_REVISION}.webp"
     )
-    assert (tmp_path / "previews/entity-atlases/vehicle/0-r4.webp").is_file()
-    assert (tmp_path / "previews/entity-atlases/infantry/7-r4.webp").is_file()
-    with Image.open(tmp_path / "previews/entity-atlases/infantry/0-r4.webp") as atlas:
+    assert (
+        tmp_path / f"previews/entity-atlases/vehicle/7-r{PAGES_RENDER_REVISION}.webp"
+    ).is_file()
+    assert (
+        tmp_path / f"previews/entity-atlases/building/7-r{PAGES_RENDER_REVISION}.webp"
+    ).is_file()
+    assert (
+        tmp_path / f"previews/entity-atlases/infantry/7-r{PAGES_RENDER_REVISION}.webp"
+    ).is_file()
+    with Image.open(
+        tmp_path
+        / f"previews/entity-atlases/infantry/0-r{PAGES_RENDER_REVISION}.webp"
+    ) as atlas:
         assert atlas.size == (144, 135)
+
+
+def test_pages_exports_one_shared_search_thumbnail_atlas_per_angle(
+    tmp_path: Path,
+) -> None:
+    entities = []
+    for entity_id, image_format, supports_facing in (
+        ("TANK", "vxl", False),
+        ("SOLDIER", "shp", True),
+    ):
+        for facing in range(8 if supports_facing else 1):
+            output = (
+                tmp_path
+                / "previews"
+                / "entities"
+                / entity_id
+                / "thumbnail"
+                / str(facing)
+                / "0.webp"
+            )
+            output.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGBA", (24, 16), (facing, 20, 30, 255)).save(
+                output,
+                format="WEBP",
+                lossless=True,
+            )
+        entities.append(
+            {
+                "id": entity_id,
+                "kind": "vehicle" if image_format == "vxl" else "infantry",
+                "body_format": image_format,
+                "renderable": True,
+                "preview": {
+                    "format": image_format,
+                    "supports_facing": supports_facing,
+                },
+            }
+        )
+
+    metadata = _export_entity_search_thumbnail_atlases(tmp_path, entities)
+
+    expected_path = (
+        f"previews/entity-search-atlases/{{facing}}-r{PAGES_RENDER_REVISION}.webp"
+    )
+    assert metadata["SOLDIER"]["path"] == expected_path
+    assert metadata["TANK"]["path"] == expected_path
+    assert metadata["SOLDIER"]["facing_count"] == 8
+    assert metadata["SOLDIER"]["cell_width"] == 36
+    atlas_path = (
+        tmp_path / f"previews/entity-search-atlases/1-r{PAGES_RENDER_REVISION}.webp"
+    )
+    with Image.open(atlas_path) as atlas:
+        assert atlas.size == (72, 36)
+        soldier_index = int(metadata["SOLDIER"]["index"])
+        center_x = soldier_index * 36 + 18
+        assert atlas.convert("RGBA").getpixel((center_x, 18))[:3] == (5, 20, 30)
 
 
 def test_pages_audio_stats_include_lightweight_media_facets() -> None:

@@ -60,7 +60,7 @@ def _safe_member_path(raw_path: str) -> str:
 
 def _is_cdn_member(path: str) -> bool:
     return path == "manifest.json" or path in REQUIRED_CATALOGS or path.startswith(
-        "previews/entity-atlases/"
+        ("previews/entity-atlases/", "previews/entity-search-atlases/")
     )
 
 
@@ -84,7 +84,8 @@ def _content_digest(files: list[tuple[str, bytes]]) -> str:
 def _package_notice() -> str:
     return (
         "RA2 Explorer Pages data package\n\n"
-        "This package contains generated bilingual indexes and compact card-preview atlases.\n"
+        "This package contains generated bilingual indexes and compact card and search-preview "
+        "atlases.\n"
         "It does not contain original MIX archives, VXL/SHP source files, "
         "executables, or WAV files.\n"
         "These generated data assets are distributed by the project maintainer under separate\n"
@@ -147,9 +148,18 @@ def prepare_package(
 
     selected_paths = {path for path, _ in selected}
     missing = sorted({"manifest.json", *REQUIRED_CATALOGS} - selected_paths)
-    atlases = [path for path in selected_paths if path.startswith("previews/entity-atlases/")]
-    if missing or not atlases:
-        detail = ", ".join(missing) if missing else "单位卡片图集"
+    card_atlases = [
+        path for path in selected_paths if path.startswith("previews/entity-atlases/")
+    ]
+    search_atlases = [
+        path
+        for path in selected_paths
+        if path.startswith("previews/entity-search-atlases/")
+    ]
+    if missing or not card_atlases or not search_atlases:
+        detail = ", ".join(missing) if missing else (
+            "单位卡片图集" if not card_atlases else "搜索单位缩略图图集"
+        )
         raise PagesCdnPublishError(f"CDN 数据缺少必要内容：{detail}")
 
     package_manifest = {
@@ -186,7 +196,12 @@ def prepare_package(
         "files": len(selected),
         "bytes": sum(len(content) for _, content in selected),
         "sha256": _content_digest(selected),
-        "included": ["manifest", "bilingual_catalogs", "entity_card_atlases"],
+        "included": [
+            "manifest",
+            "bilingual_catalogs",
+            "entity_card_atlases",
+            "entity_search_atlases",
+        ],
         "contains_original_game_files": False,
     }
 

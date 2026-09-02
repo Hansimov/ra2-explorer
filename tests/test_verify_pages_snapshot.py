@@ -9,7 +9,7 @@ import pytest
 from scripts.verify_pages_snapshot import SnapshotValidationError, verify_snapshot
 
 
-def _write_snapshot(root: Path) -> None:
+def _write_snapshot(root: Path, *, schema_version: int = 1) -> None:
     files = {
         "ASSET-NOTICE.txt": b"derived files only",
         "assets/a.json": b"{}",
@@ -31,7 +31,7 @@ def _write_snapshot(root: Path) -> None:
         current["files"] += 1
         current["bytes"] += len(content)
     manifest = {
-        "schema_version": 1,
+        "schema_version": schema_version,
         "snapshot_id": "test-snapshot",
         "edition": "pages-slim",
         "included": ["units", "sounds"],
@@ -65,6 +65,25 @@ def test_verify_pages_snapshot_directory_and_zip(tmp_path: Path) -> None:
 
     assert directory_result["snapshot_id"] == "test-snapshot"
     assert archive_result == directory_result
+
+
+@pytest.mark.parametrize("schema_version", [1, 2])
+def test_verify_pages_snapshot_accepts_supported_schema(
+    tmp_path: Path,
+    schema_version: int,
+) -> None:
+    snapshot = tmp_path / f"snapshot-{schema_version}"
+    _write_snapshot(snapshot, schema_version=schema_version)
+
+    assert verify_snapshot(snapshot)["snapshot_id"] == "test-snapshot"
+
+
+def test_verify_pages_snapshot_rejects_future_schema(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    _write_snapshot(snapshot, schema_version=3)
+
+    with pytest.raises(SnapshotValidationError, match="版本或发行类型无效"):
+        verify_snapshot(snapshot)
 
 
 def test_verify_pages_snapshot_rejects_raw_game_file(tmp_path: Path) -> None:

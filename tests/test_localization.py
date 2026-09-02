@@ -22,6 +22,13 @@ def test_unit_name_fuzzy_search_accepts_a_tightly_bounded_subsequence() -> None:
     assert not localized_fuzzy_search_match("航母", "航空发动机")
 
 
+def test_search_tolerates_official_glyph_variants_and_one_nearby_typo() -> None:
+    assert localized_search_match("防空炮", "防空砲")
+    assert localized_fuzzy_search_match("防空泡", "防空砲")
+    assert localized_fuzzy_search_match("patroit", "Patriot Missile")
+    assert not localized_fuzzy_search_match("防空炮", "防御步兵")
+
+
 def test_unit_names_expose_full_pinyin_and_initial_search_aliases() -> None:
     assert pinyin_search_aliases("超时空军团兵") == {
         "pinyin": "chao shi kong jun tuan bing",

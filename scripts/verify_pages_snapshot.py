@@ -17,6 +17,8 @@ try:
 except ModuleNotFoundError:  # Imported as scripts.verify_pages_snapshot in tests.
     from scripts.privacy_scan import scan_text
 
+SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS = {1, 2}
+
 
 MAX_FILES = 50_000
 MAX_BYTES = 256 * 1024 * 1024
@@ -171,7 +173,10 @@ def _validate_manifest(
     manifest: dict[str, Any],
     entries: list[SnapshotEntry],
 ) -> None:
-    if manifest.get("schema_version") != 1 or manifest.get("edition") != "pages-slim":
+    if (
+        manifest.get("schema_version") not in SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS
+        or manifest.get("edition") != "pages-slim"
+    ):
         raise SnapshotValidationError("快照版本或发行类型无效")
     if manifest.get("included") != ["units", "sounds"]:
         raise SnapshotValidationError("精简快照只能包含单位和声音")

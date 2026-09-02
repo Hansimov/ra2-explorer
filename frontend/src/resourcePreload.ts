@@ -140,6 +140,7 @@ export function pauseCardPreviewBackground() {
 interface AudioJob {
   url: string;
   priority: ResourcePriority;
+  controller: AbortController | null;
   resolve: (cachedUrl: string | null) => void;
   promise: Promise<string | null>;
 }
@@ -189,7 +190,9 @@ function drainAudioQueue() {
     const foregroundIndex = audioQueue.findIndex((job) => job.priority === "foreground");
     const [job] = audioQueue.splice(foregroundIndex >= 0 ? foregroundIndex : 0, 1);
     activeAudioPreloads += 1;
-    void fetch(job.url, { cache: "force-cache" })
+    const controller = new AbortController();
+    job.controller = controller;
+    void fetch(job.url, { cache: "force-cache", signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Audio preload failed (${response.status})`);
         return response.blob();
@@ -200,6 +203,7 @@ function drainAudioQueue() {
       })
       .catch(() => job.resolve(null))
       .finally(() => {
+        job.controller = null;
         activeAudioPreloads = Math.max(0, activeAudioPreloads - 1);
         pendingAudioResources.delete(job.url);
         drainAudioQueue();
@@ -228,11 +232,24 @@ export function preloadAudioResource(url: string, priority: ResourcePriority = "
 
   let resolveJob: (cachedUrl: string | null) => void = () => {};
   const promise = new Promise<string | null>((resolve) => { resolveJob = resolve; });
-  const job: AudioJob = { url, priority, resolve: resolveJob, promise };
+  const job: AudioJob = { url, priority, controller: null, resolve: resolveJob, promise };
   pendingAudioResources.set(url, job);
   audioQueue.push(job);
   drainAudioQueue();
   return promise;
+}
+
+export function cancelAudioResourcePreload(url: string) {
+  const pending = pendingAudioResources.get(url);
+  if (!pending) return;
+  if (pending.controller) {
+    pending.controller.abort();
+    return;
+  }
+  const queuedIndex = audioQueue.indexOf(pending);
+  if (queuedIndex >= 0) audioQueue.splice(queuedIndex, 1);
+  pendingAudioResources.delete(url);
+  pending.resolve(null);
 }
 
 export function preloadAudioResourceGroup(urls: string[]) {

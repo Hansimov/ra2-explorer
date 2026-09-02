@@ -190,6 +190,21 @@ export type EntityKind = "vehicle" | "infantry" | "aircraft" | "building";
 export type EntityUsage = "buildable" | "hero" | "tech" | "civilian" | "scenario";
 export type GameLanguage = "zh-CN" | "zh-TW";
 
+export interface EntityThumbnailAtlas {
+  path: string;
+  index: number;
+  columns: number;
+  cell_width: number;
+  cell_height: number;
+  facing_count: number;
+  content_bounds?: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+}
+
 export interface EntitySummary {
   id: string;
   kind: EntityKind;
@@ -208,6 +223,7 @@ export interface EntitySummary {
   body_status: "available" | "not_defined" | "missing";
   component_count: number;
   body_format: string | null;
+  facing_format: "vxl" | "shp" | null;
   media_kinds: Array<"voice" | "sound" | "animation">;
   media_count: number;
   cost: string | null;
@@ -226,14 +242,8 @@ export interface EntitySummary {
     display_name: string;
     icon: EntityComponentAsset | null;
   } | null;
-  thumbnail_atlas?: {
-    path: string;
-    index: number;
-    columns: number;
-    cell_width: number;
-    cell_height: number;
-    facing_count: number;
-  };
+  thumbnail_atlas?: EntityThumbnailAtlas;
+  search_thumbnail_atlas?: EntityThumbnailAtlas;
 }
 
 export type AssetSort = "name_asc" | "name_desc" | "size_desc" | "size_asc";
@@ -266,6 +276,7 @@ export interface EntityDependency {
 
 export interface EntityPreview {
   format: "vxl" | "shp" | null;
+  facing_format: "vxl" | "shp" | null;
   frame_count: number;
   facing_count: number;
   supports_facing: boolean;
@@ -300,6 +311,7 @@ export interface AnimationPlayback {
   loop_count: number | null;
   direction: string | null;
   shadow: boolean;
+  reverse: boolean;
 }
 
 export interface MediaSample {
@@ -454,6 +466,7 @@ export interface EntityPreviewOptions {
   paletteId?: string;
   scale?: number;
   thumbnail?: boolean;
+  compact?: boolean;
   effectAssetId?: string;
   effectFrame?: number;
   effectShadowFrame?: number;
@@ -658,11 +671,12 @@ export const api = {
       frame: String(options.frame ?? 0),
       facing: String(options.facing ?? 0),
       scale: String(options.scale ?? 4),
-      v: "12",
+      v: "13",
     });
     if (options.playerColor) params.set("player_color", options.playerColor);
     if (options.paletteId) params.set("palette_id", options.paletteId);
     if (options.thumbnail) params.set("thumbnail", "true");
+    if (options.compact) params.set("compact", "true");
     if (options.effectAssetId) params.set("effect_asset_id", options.effectAssetId);
     if (options.effectFrame !== undefined) params.set("effect_frame", String(options.effectFrame));
     if (options.effectShadowFrame !== undefined) params.set("effect_shadow_frame", String(options.effectShadowFrame));

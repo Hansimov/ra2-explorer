@@ -24,7 +24,9 @@ function pagesCdnBase(mode: string, override: string | undefined) {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, ".", "");
+  // Vite's loadEnv() only reads env files. Preserve the documented precedence
+  // of variables supplied by the caller/CI over values from .env files.
+  const env = { ...loadEnv(mode, ".", ""), ...process.env };
   const buildCommit = env.VITE_RA2EXP_BUILD_COMMIT || gitValue(["rev-parse", "HEAD"]);
   const buildTag = env.VITE_RA2EXP_BUILD_TAG || gitValue(["describe", "--tags", "--exact-match", "--match", "v*", "HEAD"]);
   const buildTime = env.VITE_RA2EXP_BUILD_TIME || gitValue(["show", "-s", "--format=%cI", "HEAD"]);

@@ -1,0 +1,446 @@
+{
+  "schema": 1,
+  "description": "Verified Yuri's Revenge unit-intelligence voice transcripts and Simplified Chinese translations.",
+  "entries": {
+    "cevau39": {
+      "original_text": "Yuri's Boomer submarines have ballistic missiles that can be fired from a great distance. Send dolphins and destroyers out as soon as you detect one.",
+      "localized_text": "尤里的雷鸣攻击潜艇配备了可从远距离发射的弹道导弹。一旦发现它，立即派出海豚和驱逐舰。"
+    },
+    "cevau40": {
+      "original_text": "No doubt the result of indiscriminate genetic mutations, the Brute has the strength of twenty men and can even smash tanks. Try to engage it from long range if possible.",
+      "localized_text": "狂兽人无疑是滥用基因突变的产物，拥有二十个人的力量，甚至能砸毁坦克。尽可能从远距离与它交战。"
+    },
+    "cevau41": {
+      "original_text": "Tanya's report is the most information we have on this weapon. Somehow it drives people berserk and they begin firing indiscriminately. If you see one, destroy it quickly.",
+      "localized_text": "谭雅的报告是我们目前掌握的有关这种武器的全部情报。它会以某种方式使人陷入狂乱并胡乱开火。如果发现它，尽快摧毁。"
+    },
+    "cevau42": {
+      "original_text": "Hmm, looks like even Yuri can't do without engineers. I guess somebody's got to tighten the bolts in his head.",
+      "localized_text": "看来就连尤里也离不开工程师。总得有人替他拧紧脑袋里的螺丝。"
+    },
+    "cevau43": {
+      "original_text": "If this doesn't prove Yuri's insane, then nothing will. Yuri's Floating Disc is designed to steal resources from our bases. I have no idea why it was built to look like a flying saucer.",
+      "localized_text": "如果这还不能证明尤里疯了，那就没有什么能证明了。尤里的雷射幽浮被设计用来窃取我们基地的资源，我完全不明白为什么要把它造得像飞碟。"
+    },
+    "cevau44": {
+      "original_text": "This is one of Yuri's new Gatling Tanks. Their guns shoot faster and inflict more damage the longer a fight goes on. If you run across them, take them out quickly or they'll be able to rip through your forces.",
+      "localized_text": "这是尤里的新型盖特机炮坦克。战斗持续得越久，它的火炮射速越快、伤害越高。遇到它时要迅速摧毁，否则它会撕碎你的部队。"
+    },
+    "cevau45": {
+      "original_text": "This is Yuri's Hover Transport, Commander.",
+      "localized_text": "指挥官，这是尤里的装甲运兵船。"
+    },
+    "cevau46": {
+      "original_text": "This is one of Yuri's Initiates. They can't control minds yet, but nothing is safe from their psychic blasts.",
+      "localized_text": "这是尤里的新兵。他们尚不能控制心灵，但没有什么能在他们的心灵冲击下安然无恙。"
+    },
+    "cevau47": {
+      "original_text": "Yuri's Lasher Tank looks like an old Soviet prototype they made to match our own Grizzly Tank's speed. According to our reports, it's no match for our tanks unless Yuri has made some vast improvement, which I doubt.",
+      "localized_text": "尤里的狂风坦克看起来像苏联为了匹敌灰熊坦克速度而制造的旧原型。根据报告，除非尤里作出了重大改进——我对此很怀疑——否则它不是我们坦克的对手。"
+    },
+    "cevau48": {
+      "original_text": "Yuri's Magnetron doesn't have a weapon, but it can pull vehicles toward it with a powerful energy beam. I assume that Yuri built them to work in concert with mind-controlling units.",
+      "localized_text": "尤里的磁电坦克没有常规武器，却能用强大的能量束把车辆拉向自己。我推测尤里制造它们是为了配合心灵控制单位。"
+    },
+    "cevau49": {
+      "original_text": "And I thought the Brute was bad. Yuri calls this thing a Mastermind. It's basically a big brain on wheels that mind-controls anything that gets near it. Don't get near it.",
+      "localized_text": "我原以为狂兽人已经够糟了。尤里把这东西称为精神控制车，它基本上就是一个装在轮子上的大脑，会控制任何靠近它的单位。不要接近它。"
+    },
+    "cevau50": {
+      "original_text": "This is Yuri's Construction Vehicle.",
+      "localized_text": "这是尤里的基地车。"
+    },
+    "cevau51": {
+      "original_text": "Yuri uses these slaves to gather the resources he needs to fight his war. They are forced to work until they drop, and then Yuri enslaves more. Free them, and they'll join our fight against Yuri.",
+      "localized_text": "尤里利用这些奴隶采集发动战争所需的资源。他们被迫工作到倒下，随后尤里再奴役更多人。解放他们，他们就会加入我们对抗尤里的战斗。"
+    },
+    "cevau52": {
+      "original_text": "Yuri's resources are gathered by slaves and refined inside the Slave Miner vehicle. If you destroy it, the slaves inside will be freed.",
+      "localized_text": "尤里的资源由奴隶采集，并在奴隶矿场内精炼。摧毁矿场后，里面的奴隶会获得自由。"
+    },
+    "cevau53": {
+      "original_text": "Little is known about the mercenary group called Virus, except they are all female and their weapons inject a lethal virus into their victims. Don't get hit by one of their darts, Commander. No one has ever survived its effects.",
+      "localized_text": "我们对名为“病毒”的佣兵组织知之甚少，只知道成员全是女性，她们的武器会向目标注入致命病毒。指挥官，别被她们的飞镖击中，从未有人能在病毒作用下生还。"
+    },
+    "cevau54": {
+      "original_text": "Yuri's clones are not as powerful as the original, but their ability to control minds is a definite threat on the battlefield.",
+      "localized_text": "尤里的复制人不如本尊强大，但他们控制心灵的能力在战场上无疑是一大威胁。"
+    },
+    "cevau55": {
+      "original_text": "Yuri is the greatest threat to mankind. If the coward ever shows himself in the field, throw everything you've got at him. No one is safe until Yuri is stopped.",
+      "localized_text": "尤里是全人类最大的威胁。如果这个懦夫胆敢出现在战场上，就动用一切力量攻击他。在阻止尤里之前，没有人是安全的。"
+    },
+    "cevau56": {
+      "original_text": "This is Yuri's Barracks building, Commander.",
+      "localized_text": "指挥官，这是尤里的兵营。"
+    },
+    "cevau57": {
+      "original_text": "This is Yuri's Battle Lab, Commander. Like our own, it allows him to dramatically increase his technology.",
+      "localized_text": "指挥官，这是尤里的作战实验室。与我们的实验室一样，它能显著提升尤里的科技水平。"
+    },
+    "cevau58": {
+      "original_text": "Yuri's Bio Reactor can generate some power on its own, but if Yuri captures any of our troops, he will put them inside the reactors and drain additional power from their bodies.",
+      "localized_text": "尤里的生化反应炉自身可以产生一些电力，但如果尤里俘获了我们的部队，他会把他们塞进反应炉，从他们的身体中榨取额外能源。"
+    },
+    "cevau59": {
+      "original_text": "Yuri's Citadel Walls are exceptionally tough. Don't expect to break them down while under fire.",
+      "localized_text": "尤里的护城墙异常坚固。不要指望在敌人火力下轻易将其摧毁。"
+    },
+    "cevau60": {
+      "original_text": "The Cloning Vat doubles Yuri's ability to create an army. Your position can quickly be overrun by a swarm of Initiates if you let a Cloning Vat do its work.",
+      "localized_text": "复制中心能让尤里生产军队的能力翻倍。如果任由它运转，你的阵地很快就会被成群的新兵淹没。"
+    },
+    "cevau61": {
+      "original_text": "The Gatling Cannon defense structures are lethal to both land and air units. Their cannons spin and fire faster the longer a target is within range.",
+      "localized_text": "盖特机炮防御设施对陆地和空中单位都极为致命。目标在射程内停留得越久，机炮旋转和开火的速度就越快。"
+    },
+    "cevau62": {
+      "original_text": "Yuri sees people as pawns in his game, and the Grinder proves it. Yuri mind-controls people and grinds them into resources to fund his war. It would be a fitting end to feed Yuri into his own machine.",
+      "localized_text": "尤里把人当成游戏里的棋子，部队回收厂就是明证。他控制人们的心灵，再把他们碾成资源来支撑战争。让尤里也被自己的机器吞进去，倒是很适合他的结局。"
+    },
+    "cevau63": {
+      "original_text": "Yuri uses the Psychic Sensor as a radar device. It also allows him to scout a remote location by looking through the eyes of enemy troops.",
+      "localized_text": "尤里把心灵感应器当作雷达使用。它还能让他透过敌军的眼睛侦察远处区域。"
+    },
+    "cevau64": {
+      "original_text": "Commander, beware of Yuri's Psychic Tower. If units get too close to it, they become mindless slaves to Yuri. Destroying the tower or cutting its power will free any controlled units.",
+      "localized_text": "指挥官，小心尤里的心灵控制塔。单位一旦靠得太近，就会变成尤里没有思想的奴隶。摧毁控制塔或切断其电力，便能解放被控制的单位。"
+    },
+    "cevau65": {
+      "original_text": "Destroy Yuri's Submarine Pen to keep him from building his Boomer submarines. Yuri doesn't have any other way to effectively attack sea targets.",
+      "localized_text": "摧毁尤里的潜艇船坞，阻止他建造雷鸣攻击潜艇。尤里没有其他能有效攻击海上目标的手段。"
+    },
+    "cevau66": {
+      "original_text": "Yuri's weak armor divisions are reinforced by his Tank Bunkers. Once inside, a tank is protected from all damage.",
+      "localized_text": "尤里薄弱的装甲部队依靠坦克碉堡得到加强。坦克进入碉堡后会受到严密保护。"
+    },
+    "cevau67": {
+      "original_text": "This is Yuri's War Factory.",
+      "localized_text": "这是尤里的战车工厂。"
+    },
+    "cevau68": {
+      "original_text": "Yuri has managed to develop the Force Shield Defense System only days after we developed our own. It would seem that Yuri got hold of one of our spies.",
+      "localized_text": "我们研发出力场护盾防御系统才几天，尤里就成功造出了自己的版本。看来尤里抓到了我们的一名间谍。"
+    },
+    "cevau69": {
+      "original_text": "Yuri's Genetic Mutator can turn anyone it targets into a mutated Brute. Get your men out of your base before this goes off, or you'll have an army of Brutes inside your walls.",
+      "localized_text": "尤里的基因突变器能把目标区域内的任何人变成变异狂兽人。在它启动前让士兵离开基地，否则你的围墙内会出现一支狂兽人大军。"
+    },
+    "cevau70": {
+      "original_text": "If we don't put an end to Yuri's Psychic Dominator, it will put an end to all mankind. It can enslave any of your troops or vehicles and turn them against you. Don't let Yuri turn our troops against us, sir.",
+      "localized_text": "如果我们不摧毁尤里的心灵控制器，它就会毁灭全人类。它能奴役你的步兵或车辆并令其倒戈。长官，别让尤里把我们的部队变成敌人。"
+    },
+    "cevau71": {
+      "original_text": "Sir, our new Battle Fortress crushes enemy armor that crosses its path while it carries our soldiers to battle. Plus, everyone inside can fire from its many gun ports.",
+      "localized_text": "长官，我们的新型战斗要塞能搭载士兵投入战斗，同时碾碎挡路的敌军装甲。车内所有人还可以通过众多射击孔开火。"
+    },
+    "cevau72": {
+      "original_text": "The Korean Black Eagle Squadron will provide air support in our fight against Yuri. Theirs are the most lethal planes in the air.",
+      "localized_text": "韩国的黑鹰战机中队将在对抗尤里的战斗中提供空中支援。它们是空中最致命的战机。"
+    },
+    "cevau73": {
+      "original_text": "The Force Shield Defense System was designed to protect our bases against Soviet nuclear assault. Hopefully it will defend against Yuri's weapons also.",
+      "localized_text": "力场护盾防御系统原本用于保护基地免遭苏联核打击，希望它也能抵御尤里的武器。"
+    },
+    "cevau74": {
+      "original_text": "The French Grand Cannon is a devastating base-defense turret. It's effective against even large-scale assaults.",
+      "localized_text": "法国巨炮是威力惊人的基地防御炮塔，即使面对大规模进攻也十分有效。"
+    },
+    "cevau75": {
+      "original_text": "Commander, these are Guardian GIs. They're armed with both machine guns and anti-tank rockets. When deployed, they are able to reduce a tank to scrap metal in seconds.",
+      "localized_text": "指挥官，这些是重装大兵。他们同时装备机枪和反坦克火箭，部署后能在数秒内把坦克打成废铁。"
+    },
+    "cevau76": {
+      "original_text": "GI paratroopers can drop into any location. Use them to scout an area or attack an exposed enemy flank.",
+      "localized_text": "美国大兵伞兵可以空投到任何地点。利用他们侦察区域，或攻击暴露的敌军侧翼。"
+    },
+    "cevau77": {
+      "original_text": "Sir, this is the Robot Control Center. With it, you can command our new Robot Tanks, a fast anti-armor attack robot.",
+      "localized_text": "长官，这是机器人控制中心。借助它，你可以指挥我们的新型遥控坦克——一种高速反装甲机器人。"
+    },
+    "cevau78": {
+      "original_text": "This is our new Robot Tank. Since it has no driver, it can't be mind-controlled by Yuri. Its only weakness is that it's linked to the Robot Control Center. If the center goes down, all Robot Tanks are inoperable.",
+      "localized_text": "这是我们的新型遥控坦克。由于没有驾驶员，尤里无法控制它的心灵。它唯一的弱点是依赖机器人控制中心；一旦中心被毁，所有遥控坦克都会停止运作。"
+    },
+    "cevau79": {
+      "original_text": "The British Sniper Corps has joined our fight. Use them to take out Yuri's mind-control units from long range.",
+      "localized_text": "英国狙击手部队已加入战斗。利用他们从远处消灭尤里的心灵控制单位。"
+    },
+    "cevau80": {
+      "original_text": "The German Tank Destroyer was designed to punch through vehicle armor. It's effective against enemy tanks, but it does very little damage to buildings.",
+      "localized_text": "德国坦克杀手专为击穿车辆装甲而设计。它对敌军坦克很有效，但对建筑造成的伤害很低。"
+    },
+    "cevau81": {
+      "original_text": "The Soviet Conscript has never been a match for our own GIs, but a squad of them in a Battle Bunker can hold a position against three times their number.",
+      "localized_text": "苏联动员兵从来不是美国大兵的对手，但一队驻扎在战斗碉堡里的动员兵足以抵挡三倍于己的敌人。"
+    },
+    "cevau82": {
+      "original_text": "The Soviet super-commando Boris is specially trained and heavily armed. He also seems to have special authority to order an airstrike at his own discretion.",
+      "localized_text": "苏联超级突击队员鲍里斯训练有素、装备精良，似乎还拥有自行呼叫空袭的特殊权限。"
+    },
+    "cevau83": {
+      "original_text": "The Soviet main army has incorporated Libyan Demolition Trucks into its fighting force. I don't know how you get someone to agree to drive a truck with a nuke in the back.",
+      "localized_text": "苏联主力军已把利比亚自爆卡车编入战斗部队。我真不知道他们如何说服一个人去驾驶后面载着核弹的卡车。"
+    },
+    "cevau85": {
+      "original_text": "We don't know how the Soviets got hold of our Force Shield technology, but they have it now, so prepare for it when using the Weather Control Device.",
+      "localized_text": "我们不知道苏联如何获得了力场护盾技术，但他们现在确实拥有它。使用天气控制机时要做好应对准备。"
+    },
+    "cevau86": {
+      "original_text": "The Soviet Industrial Plant increases their productivity and, as a result, increases the number of enemies you'll face on the field. Destroy it whenever possible.",
+      "localized_text": "苏联工业工厂能提高生产效率，也会因此增加你在战场上面对的敌人数量。只要有机会就摧毁它。"
+    },
+    "cevau87": {
+      "original_text": "The Soviets mocked our Rocketeers, but they seem to be using the same design in cosmonaut training. They've replaced the Rocketeer's light machine gun with a laser rifle.",
+      "localized_text": "苏联曾嘲笑我们的火箭飞行兵，现在却在登月火箭员训练中采用了相同设计，只是把轻机枪换成了激光步枪。"
+    },
+    "cevau88": {
+      "original_text": "The Siege Chopper has limited weapons while in the air, but if it lands it can deploy a large cannon and become a powerful turret. The combination of firepower and mobility gives it a distinct tactical advantage.",
+      "localized_text": "武装直升机在空中时武器有限，但落地后可以部署一门巨炮，化为强力炮塔。火力与机动性的结合赋予它明显的战术优势。"
+    },
+    "cevau89": {
+      "original_text": "With the loss of Yuri and his psychic devices, the Soviets have had to resort to conventional reconnaissance methods like the Spy Plane. Keep your eyes open and anti-air defenses ready.",
+      "localized_text": "失去尤里和他的心灵装置后，苏联不得不改用侦察机等传统侦察手段。保持警惕，让防空设施随时待命。"
+    },
+    "cevau90": {
+      "original_text": "The Cuban Terrorist destroys buildings or any smaller target by voluntarily detonating explosives strapped to his back. When possible, neutralize him from long range to avoid collateral damage.",
+      "localized_text": "古巴恐怖分子会主动引爆绑在背上的炸药，摧毁建筑或更小的目标。尽可能从远处消灭他，以免造成附带损失。"
+    },
+    "cevau91": {
+      "original_text": "The Russian Tesla Tank can shoot bolts of electricity with devastating effect. Be sure to attack them in superior numbers.",
+      "localized_text": "俄罗斯磁能坦克能发射威力惊人的电弧。务必以数量优势攻击它们。"
+    },
+    "cevau92": {
+      "original_text": "Hospitals provide medical treatment for soldiers in the field. As long as we have one under our control, the supplies can get to the men and keep them patched up.",
+      "localized_text": "医院能为战场上的士兵提供治疗。只要我们控制一座医院，医疗物资就能送到士兵手中，让他们持续恢复。"
+    },
+    "cevau93": {
+      "original_text": "A Machine Shop is an invaluable source of repair parts for our vehicles in the field. Constant repairs to all vehicles are possible as long as we can keep a shop running.",
+      "localized_text": "机器商店是战场车辆维修零件的重要来源。只要商店保持运作，所有车辆都能持续得到维修。"
+    },
+    "cevau94": {
+      "original_text": "In the chaos of war, Secret Labs have been discovered on the battlefield. Capture them with an engineer to gain their technologies.",
+      "localized_text": "战乱中，战场上发现了秘密科技实验室。派工程师占领它们，就能获得其中的技术。"
+    },
+    "csofu39": {
+      "original_text": "Yuri's Boomer submarine combines the stealth of a sub with the ballistic capabilities of our own Dreadnoughts. Our squids are the only unit that can effectively counter them.",
+      "localized_text": "尤里的雷鸣攻击潜艇结合了潜艇的隐蔽性与我方无畏级战舰的弹道打击能力。我们的巨型乌贼是唯一能有效对付它们的单位。"
+    },
+    "csofu40": {
+      "original_text": "Commander, this unit is the strongest Yuri has. He's the Brute, and he can smash tanks with minimal effort.",
+      "localized_text": "指挥官，这是尤里最强壮的单位——狂兽人。他可以毫不费力地砸毁坦克。"
+    },
+    "csofu41": {
+      "original_text": "Unfortunately, the Chaos Drone was a promising Soviet design that Yuri stole. It produces a cloud of hallucinogenic gas that causes all those affected to go berserk for a limited time period.",
+      "localized_text": "不幸的是，神经突击车原本是很有前途的苏联设计，却被尤里偷走了。它会释放致幻气体，使所有受影响者在一段时间内陷入狂乱。"
+    },
+    "csofu42": {
+      "original_text": "Yuri is running his war mostly on stolen Soviet technology maintained by Soviet defectors. His engineers may have worked for us once, but they have joined Yuri now. Shoot them on sight.",
+      "localized_text": "尤里主要依靠偷来的苏联技术发动战争，而这些技术由苏联叛徒维护。他的工程师或许曾为我们工作，但现在已经投靠尤里。发现即射杀。"
+    },
+    "csofu43": {
+      "original_text": "Beware of these Floating Discs, Comrade General. Yuri has designed them to drain power from our Tesla and nuclear reactors, as well as our defensive buildings. And if they get near a refinery, they are even better thieves than the accursed Allied spies.",
+      "localized_text": "将军同志，小心这些雷射幽浮。尤里把它们设计成可以抽取磁能反应炉、核反应炉和防御建筑的电力；如果靠近矿石精炼厂，它们甚至比可恶的盟军间谍更会偷钱。"
+    },
+    "csofu44": {
+      "original_text": "The Gatling Tank is an impressive machine. Its guns can effectively target both air and land targets. The fire rate increases over time as the main guns get up to speed, so it is best dealt with by quick precision strikes.",
+      "localized_text": "盖特机炮坦克是一种令人印象深刻的机器，它的火炮能有效攻击空中和陆地目标。主炮转速提升后射速会随时间增加，因此最好以快速、精准的打击对付它。"
+    },
+    "csofu45": {
+      "original_text": "This is Yuri's Hover Transport, Commander.",
+      "localized_text": "指挥官，这是尤里的装甲运兵船。"
+    },
+    "csofu46": {
+      "original_text": "Yuri calls his foot soldiers Initiates. They attack with a powerful psychic blast, effective against infantry but not much else.",
+      "localized_text": "尤里把他的步兵称为新兵。他们使用强大的心灵冲击攻击，对步兵很有效，但对其他目标作用不大。"
+    },
+    "csofu47": {
+      "original_text": "We suspect Yuri restored the plans for the Lasher Tank from our research department. But don't worry, Commander. We abandoned the project because the tank was too weak.",
+      "localized_text": "我们怀疑尤里恢复了从研究部门偷走的狂风坦克设计。不过不必担心，指挥官；我们当初放弃这个项目，就是因为它太弱。"
+    },
+    "csofu48": {
+      "original_text": "Sir, Yuri is deploying a new unit called a Magnetron. It can generate a powerful electromagnetic field that can drag our tanks toward it.",
+      "localized_text": "长官，尤里正在部署一种名为磁电坦克的新单位。它能产生强大的电磁场，把我们的坦克拖向它。"
+    },
+    "csofu49": {
+      "original_text": "This thing is Yuri's Mastermind. It can take control of our units just as Yuri himself can. We have discovered its weakness, though: it can only control so many of our units before it overloads itself and is destroyed.",
+      "localized_text": "这东西是尤里的精神控制车，能像尤里本人一样控制我们的单位。不过我们发现了它的弱点：可控制的单位数量有限，超过上限就会过载并自毁。"
+    },
+    "csofu50": {
+      "original_text": "Yuri's Construction Vehicle is a slightly modified version of our own. It, of course, deploys into a Construction Yard on command.",
+      "localized_text": "尤里的基地车是我方基地车的轻微改型，当然也能在接到命令后部署为建造场。"
+    },
+    "csofu51": {
+      "original_text": "Yuri liberated a Soviet prison early in the war, but the prisoners soon discovered that they were better off in their cells. Now they are forced to gather ore for Yuri until they drop from exhaustion, or worse.",
+      "localized_text": "战争初期，尤里解放了一座苏联监狱，但囚犯们很快发现待在牢房里反而更好。现在他们被迫为尤里采矿，直到累倒，或遭遇更糟的命运。"
+    },
+    "csofu52": {
+      "original_text": "Yuri has no need for a refinery because the Slave Miner is manned by a crew of slaves who refine the ore inside the vehicle. Without these vehicles, Yuri's production would slow to a crawl.",
+      "localized_text": "尤里不需要矿石精炼厂，因为奴隶矿场由一群奴隶操作，他们直接在车内精炼矿石。没有这些车辆，尤里的生产速度会慢得像爬一样。"
+    },
+    "csofu53": {
+      "original_text": "Virus is a lethal group of female snipers. We tried to recruit them once, but they refused. Apparently, Yuri made them an offer they could not refuse.",
+      "localized_text": "“病毒”是一群致命的女性狙击手。我们曾试图招募她们，却遭到拒绝。显然，尤里后来给了她们一个无法拒绝的条件。"
+    },
+    "csofu54": {
+      "original_text": "Without his clones, Yuri would not have made it this far. Wipe out these abominations for the good of Mother Russia.",
+      "localized_text": "没有这些复制人，尤里不可能走到今天。为了俄罗斯母亲，消灭这些怪物。"
+    },
+    "csofu55": {
+      "original_text": "I doubt we'll see the coward Yuri on the battlefield, but if he's spotted, he must be removed for the good of everyone.",
+      "localized_text": "我怀疑我们能否在战场上见到胆小的尤里，但如果发现他，为了所有人的安全必须将他消灭。"
+    },
+    "csofu56": {
+      "original_text": "This is Yuri's Barracks.",
+      "localized_text": "这是尤里的兵营。"
+    },
+    "csofu57": {
+      "original_text": "This is Yuri's Battle Lab.",
+      "localized_text": "这是尤里的作战实验室。"
+    },
+    "csofu58": {
+      "original_text": "The hideous design of the Bio Reactor requires that people be placed inside in suspended animation for it to achieve maximum power. Destroy them whenever possible.",
+      "localized_text": "生化反应炉的可憎设计要求把人置于其中的假死状态，才能达到最大功率。只要有机会就摧毁它们。"
+    },
+    "csofu59": {
+      "original_text": "Yuri believes that the stronger Citadel Walls will stop the hammer of vengeance. Show him that they will not.",
+      "localized_text": "尤里以为更坚固的护城墙能挡住复仇之锤。让他看看这些墙根本办不到。"
+    },
+    "csofu60": {
+      "original_text": "Yuri's Cloning Vats create a duplicate unit for every one that comes out of his Barracks. Given enough time, he can produce an overwhelming horde and overrun our position. Stop his efforts quickly, Comrade.",
+      "localized_text": "尤里的复制中心会为每个走出兵营的单位再制造一个复制品。只要时间足够，他就能造出压倒性的大军并淹没我们的阵地。同志，迅速阻止他。"
+    },
+    "csofu61": {
+      "original_text": "Yuri's Gatling Cannon can stop large assaults of air or land units. Destroy them from beyond their firing range, if possible.",
+      "localized_text": "尤里的盖特机炮能阻挡大规模空中或地面进攻。尽可能从其射程之外摧毁它。"
+    },
+    "csofu62": {
+      "original_text": "Yuri does not take prisoners. He feeds them into his Grinder to produce additional resources. Do not let our men be captured, Comrade General.",
+      "localized_text": "尤里从不留俘虏，而是把他们投入部队回收厂来生产额外资源。将军同志，别让我们的士兵被俘。"
+    },
+    "csofu63": {
+      "original_text": "Yuri took his Psychic Sensor from us when he betrayed the Soviet Union. He has modified it to reveal any location on the battlefield he chooses.",
+      "localized_text": "尤里背叛苏联时从我们这里带走了心灵感应器。他已将其改造为可以侦察战场上任意指定位置的设备。"
+    },
+    "csofu64": {
+      "original_text": "Comrade General, this is a Psychic Tower. When units get within its firing range, they become mindless slaves to Yuri. Once units are taken, the only way to get them back is to destroy the tower or cut the power.",
+      "localized_text": "将军同志，这是心灵控制塔。单位进入它的射程后会变成尤里没有思想的奴隶。单位一旦被控制，只有摧毁控制塔或切断电力才能夺回。"
+    },
+    "csofu65": {
+      "original_text": "This is Yuri's Submarine Pen. Without it, Yuri cannot produce Boomer submarines or Hover Transports.",
+      "localized_text": "这是尤里的潜艇船坞。没有它，尤里就无法生产雷鸣攻击潜艇或装甲运兵船。"
+    },
+    "csofu66": {
+      "original_text": "Yuri's weak Lasher Tanks need additional defenses to be effective. The Tank Bunker allows the tank's turret to fire while the tank itself remains inside a protective structure. Crack the bunker from long range if possible, and then deal with the tank inside.",
+      "localized_text": "尤里薄弱的狂风坦克需要额外防护才能发挥作用。坦克碉堡让炮塔可以开火，同时车体留在防护结构内。尽可能从远处攻破碉堡，再对付里面的坦克。"
+    },
+    "csofu67": {
+      "original_text": "This is Yuri's War Factory, sir.",
+      "localized_text": "长官，这是尤里的战车工厂。"
+    },
+    "csofu68": {
+      "original_text": "The Force Shield Defense System was originally designed by the Allies to stop our nuclear attacks, but Yuri stole their technology, and then we stole it from one of Yuri's clumsy Initiates. The arms race continues.",
+      "localized_text": "力场护盾防御系统原本由盟军设计，用来阻挡我们的核打击；尤里偷走了他们的技术，而我们又从尤里一个笨拙的新兵手里把它偷了回来。军备竞赛仍在继续。"
+    },
+    "csofu69": {
+      "original_text": "Yuri's Genetic Mutator can transform our loyal Soviet troops into freakish Brutes that serve only Yuri. The transformation is permanent. Death is the only release from this horror.",
+      "localized_text": "尤里的基因突变器能把忠诚的苏联士兵变成只效忠尤里的畸形狂兽人。这种变化不可逆转，死亡是摆脱恐怖的唯一方式。"
+    },
+    "csofu70": {
+      "original_text": "The Psychic Dominator is the ultimate extension of Yuri's psychic power. They are not currently at full power, so they can only dominate the minds of relatively small groups of our soldiers. But if we don't stop him, Yuri will use the Dominator to control the world.",
+      "localized_text": "心灵控制器是尤里心灵力量的终极延伸。它们目前尚未达到全功率，因此只能控制规模较小的士兵群体。但如果我们不阻止他，尤里会用它来控制全世界。"
+    },
+    "csofu71": {
+      "original_text": "Commander, this new Allied toy is called a Battle Fortress. This rolling monstrosity will crush even our tanks while the men inside rain fire out of its many gun ports.",
+      "localized_text": "指挥官，盟军的新玩具叫战斗要塞。这个滚动的怪物甚至能碾碎我们的坦克，同时里面的士兵会从众多射击孔倾泻火力。"
+    },
+    "csofu72": {
+      "original_text": "You may remember the Korean Black Eagle fighters from our last encounter. They are effective in destroying our key production facilities, so be sure to have plenty of flak waiting for them when they arrive.",
+      "localized_text": "你或许还记得上次交战中的韩国黑鹰战机。它们很擅长摧毁关键生产设施，所以在它们来袭时务必准备充足的防空火力。"
+    },
+    "csofu73": {
+      "original_text": "The Allies developed a Force Shield Defense System to stop our nukes. It would be wise to destroy it before a nuclear assault.",
+      "localized_text": "盟军研发了力场护盾防御系统来阻挡我们的核武器。在发动核打击前先摧毁它才是明智之举。"
+    },
+    "csofu74": {
+      "original_text": "The Allied Grand Cannon is an effective defense turret, but it has one weakness: it has a minimum-range umbrella. If you can get troops next to the cannon inside its umbrella, they can destroy the turret without fear of return fire.",
+      "localized_text": "盟军巨炮是有效的防御炮塔，但它有一个弱点：存在最小射程盲区。如果部队能靠近巨炮进入盲区，就可以在不受还击的情况下摧毁它。"
+    },
+    "csofu75": {
+      "original_text": "The Allies have been equipping some of their GIs with anti-tank weapons. These new Guardian GIs are the first real threat to our tanks the Allies have produced. Maybe our dogs would like to meet them.",
+      "localized_text": "盟军正在为部分美国大兵配备反坦克武器。这些新型重装大兵是盟军制造的第一种能真正威胁我方坦克的步兵。也许我们的警犬会乐意招呼他们。"
+    },
+    "csofu76": {
+      "original_text": "Allied paratroopers have a nasty habit of dropping into the back of our bases where defenses are weak. Be sure to keep some dogs at the ready to deal with them.",
+      "localized_text": "盟军伞兵有个讨厌的习惯，总喜欢空降到我们防御薄弱的基地后方。务必让一些警犬待命来对付他们。"
+    },
+    "csofu77": {
+      "original_text": "If you destroy the Robot Control Center, all of the enemy's Robot Tanks will be rendered useless.",
+      "localized_text": "摧毁机器人控制中心后，敌人的所有遥控坦克都会失去作用。"
+    },
+    "csofu78": {
+      "original_text": "The Allies are developing more robotic technology to deal with Yuri's mind control. The Robot Tank can be dealt with by direct fire or by destroying the Robot Control Center.",
+      "localized_text": "盟军正在研发更多机器人技术来应对尤里的心灵控制。可以用直接火力摧毁遥控坦克，也可以摧毁机器人控制中心。"
+    },
+    "csofu79": {
+      "original_text": "The Allied Sniper is lethal against our infantry. Locate snipers quickly and send in armor to deal with them.",
+      "localized_text": "盟军狙击手对我方步兵极为致命。迅速找出他们的位置，并派装甲部队处理。"
+    },
+    "csofu80": {
+      "original_text": "The Allied Tank Destroyer is one of the only threats to our Apocalypse Tanks. Deal with the Tank Destroyers quickly or expect heavy losses in our armor divisions.",
+      "localized_text": "盟军坦克杀手是少数能威胁天启坦克的单位之一。迅速解决它们，否则装甲部队将遭受惨重损失。"
+    },
+    "csofu81": {
+      "original_text": "The Battle Bunker can protect our Conscripts while they fight. Enemy tanks cannot stand against our defenses.",
+      "localized_text": "战斗碉堡能在动员兵作战时保护他们。敌军坦克无法抵挡我们的防线。"
+    },
+    "csofu82": {
+      "original_text": "This is Boris, Comrade General. He is equipped with superior weapons and has full authority to call in an airstrike. He is one of our finest soldiers and a hero to the Soviet people.",
+      "localized_text": "将军同志，这是鲍里斯。他配备了精良武器，并拥有呼叫空袭的全部权限。他是我们最优秀的士兵之一，也是苏联人民的英雄。"
+    },
+    "csofu83": {
+      "original_text": "This is the Demolition Truck. It's a truck loaded with explosives. Get the truck into an enemy base and, when they destroy it, it will explode, causing major damage to their base.",
+      "localized_text": "这是自爆卡车，一辆装满炸药的卡车。让它开进敌方基地；敌人将其摧毁时，爆炸会对基地造成重大破坏。"
+    },
+    "csofu85": {
+      "original_text": "Our borrowed Force Shield Defense System will help defend against the Allied Weather Storm attack. Hopefully it will also protect us against Yuri's weapons of mass destruction.",
+      "localized_text": "我们借来的力场护盾防御系统将帮助抵御盟军的闪电风暴，希望它也能保护我们免受尤里大规模杀伤性武器的攻击。"
+    },
+    "csofu86": {
+      "original_text": "Sir, if you build and deploy our new Industrial Plant, you'll be able to produce our units much more quickly and efficiently.",
+      "localized_text": "长官，建造并部署新型工业工厂后，我们就能更快速、更高效地生产单位。"
+    },
+    "csofu87": {
+      "original_text": "Yuri had the research team developing a cosmonaut version of the Allied Rocketeer, so we finished the design. I only wish I knew what Yuri's plans for space were.",
+      "localized_text": "尤里曾让研究团队开发盟军火箭飞行兵的宇航员版本，所以我们完成了这项设计。真希望我知道尤里在太空中究竟有什么计划。"
+    },
+    "csofu88": {
+      "original_text": "The Siege Chopper can target enemies from the air, but its main weapon can only be deployed from a ground position. A mobile turret has many tactical advantages. Wouldn't you agree, Comrade General?",
+      "localized_text": "武装直升机能从空中攻击敌人，但主武器只有落地后才能部署。机动炮塔拥有许多战术优势，你说对吗，将军同志？"
+    },
+    "csofu89": {
+      "original_text": "It is obvious now that we relied too heavily on Yuri's technologies. A Spy Plane will help combat the loss of Yuri's information network.",
+      "localized_text": "现在很明显，我们过去过度依赖尤里的技术。侦察机将帮助弥补失去尤里情报网络的损失。"
+    },
+    "csofu90": {
+      "original_text": "The Cuban Terrorist is ready to die for our cause. Use his bomb against enemy buildings. Don't let his sacrifice be in vain.",
+      "localized_text": "古巴恐怖分子愿意为我们的事业牺牲。利用他的炸弹攻击敌方建筑，别让他的牺牲白费。"
+    },
+    "csofu91": {
+      "original_text": "Our experimental Tesla Tank is finally ready for field use. It is a natural extension of Tesla technology.",
+      "localized_text": "我们的实验型磁能坦克终于可以投入实战了。它是磁能技术的自然延伸。"
+    },
+    "csofu92": {
+      "original_text": "Capture civilian Hospitals whenever they are found in the field. They will provide medical supplies to keep our troops fit to fight longer.",
+      "localized_text": "在战场上发现民用医院时就占领它们。医院会提供医疗物资，让部队保持战斗力更长时间。"
+    },
+    "csofu93": {
+      "original_text": "Machine Shops can maintain our vehicles in the field and repair any damage over time.",
+      "localized_text": "机器商店可以在战场上维护车辆，并随时间修复它们受到的损伤。"
+    },
+    "csofu94": {
+      "original_text": "Yuri apparently had a network of Secret Labs all over the globe, developing technologies for his private war. Capture these labs whenever you find them. Who knows what secrets lie within?",
+      "localized_text": "尤里显然在全球建立了秘密科技实验室网络，为他的私人战争研发技术。发现这些实验室就将其占领，谁知道里面藏着什么秘密？"
+    }
+  }
+}
