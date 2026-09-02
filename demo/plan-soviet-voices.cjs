@@ -4,13 +4,22 @@ const path = require("path");
 const BASE_URL = (process.argv[2] || "http://127.0.0.1:46120/").replace(/\/+$/, "");
 const OUTPUT = path.resolve(process.argv[3] || path.join(__dirname, "soviet-voices-plan.json"));
 const SOURCE_ID = process.env.RA2EXP_SOURCE_ID || "";
-const KINDS = ["infantry", "vehicle"];
+const KINDS = ["infantry"];
+const VOCAL_SLOTS = new Set([
+  "select", "create", "move", "attack", "feedback", "special_attack",
+  "enter", "capture", "deploy", "harvest", "die",
+]);
 const SLOT_ORDER = new Map([
   ["select", 0],
   ["create", 1],
   ["move", 2],
   ["attack", 3],
   ["feedback", 4],
+  ["special_attack", 5],
+  ["enter", 6],
+  ["capture", 7],
+  ["deploy", 8],
+  ["die", 9],
 ]);
 const USAGE_ORDER = new Map([
   ["buildable", 0],
@@ -18,7 +27,6 @@ const USAGE_ORDER = new Map([
   ["scenario", 2],
   ["civilian", 3],
 ]);
-const NONVERBAL_TEXT = /^(?:wou+f|woo+f|bark|growl|whimp|whine|breath(?:ing)?|cry|cries|laugh(?:ing)?|chuckle|scream|grunt|roar|snarl|howl|pant(?:ing)?|gasp|cough|sneeze|yell|moan|groan|嗚+|汪+|吼叫|咆哮|喘息|呼吸|哭泣|笑聲|笑声|尖叫|呻吟)$/iu;
 
 async function fetchJson(route) {
   const response = await fetch(`${BASE_URL}${route}`);
@@ -44,17 +52,14 @@ function compactText(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
-function spokenText(value) {
+function displayText(value) {
   const text = compactText(value);
   if (!text) return "";
-  const unwrapped = text
+  return text
     .replace(/^\s*[<\[*（(]\s*/, "")
     .replace(/\s*[>\]*）)]\s*$/, "")
     .replace(/^\*+|\*+$/g, "")
     .trim();
-  if (!unwrapped || NONVERBAL_TEXT.test(unwrapped.replace(/[.!?！？，,。…]+$/g, "").trim())) return "";
-  const searchable = unwrapped.replace(/[^\p{L}\p{N}]+/gu, "");
-  return searchable.length >= 2 ? text : "";
 }
 
 function isUnusedEntity(entity) {
@@ -96,17 +101,19 @@ function visualInfo(entity) {
 function voiceCues(entity) {
   const cues = new Map();
   for (const association of entity.media || []) {
-    if (association.kind !== "voice") continue;
+    if (association.kind !== "voice" && !VOCAL_SLOTS.has(association.slot)) continue;
     for (const sample of association.samples || []) {
       if (!sample.asset) continue;
-      const original = spokenText(sample.original_text);
-      const localized = spokenText(sample.localized_text);
-      if (!original && !localized) continue;
+      const original = displayText(sample.original_text);
+      const localized = displayText(sample.localized_text);
+      const translated = displayText(sample.translated_text);
       const current = cues.get(sample.asset.id) || {
         assetId: sample.asset.id,
         assetName: sample.asset.display_name,
         original,
         localized: localized && localized !== original ? localized : "",
+        translated: translated && translated !== original ? translated : "",
+        textLabel: translated ? "译文" : localized ? "中文" : "",
         events: [],
       };
       const event = {
@@ -127,6 +134,34 @@ function voiceCues(entity) {
       || leftEvent.localeCompare(rightEvent)
       || left.assetName.localeCompare(right.assetName);
   });
+}
+
+async function supplementalCosmonautDeathCues(sourceId) {
+  const params = new URLSearchParams({
+    source_id: sourceId,
+    q: "LaserCosmoDie",
+    language: "zh-CN",
+    limit: "100",
+  });
+  const page = await fetchJson(`/api/media?${params}`);
+  return page.items
+    .filter((item) => item.events.some((event) => event.toLowerCase() === "lasercosmodie"))
+    .map((item) => {
+      const original = displayText(item.original_texts?.[0]);
+      const localized = displayText(item.localized_texts?.[0]);
+      const translated = displayText(item.translated_texts?.[0]);
+      return {
+        assetId: item.asset.id,
+        assetName: item.asset.display_name,
+        original,
+        localized: localized && localized !== original ? localized : "",
+        translated: translated && translated !== original ? translated : "",
+        textLabel: translated ? "译文" : localized ? "中文" : "",
+        events: [{ slot: "die", event: "LaserCosmoDie", source: "LaserCosmoDie" }],
+        supplemental: true,
+      };
+    })
+    .sort((left, right) => left.assetName.localeCompare(right.assetName));
 }
 
 function affiliationLabel(entity) {
@@ -222,6 +257,13 @@ async function main() {
   const consideredUnits = details.filter((entity) => !isUnusedEntity(entity));
   const ignoredUnits = details.filter(isUnusedEntity);
   const units = consideredUnits.map((entity) => ({ ...entity, cues: voiceCues(entity) }));
+  const lunar = units.find((unit) => unit.id.toLowerCase() === "lunr");
+  if (lunar) {
+    const known = new Set(lunar.cues.map((cue) => cue.assetId));
+    const supplemental = (await supplementalCosmonautDeathCues(source.id))
+      .filter((cue) => !known.has(cue.assetId));
+    lunar.cues.push(...supplemental);
+  }
   const groups = groupSharedVoiceSets(units);
   const allCues = groups.flatMap((group) => group.cues);
   const cueMetadata = new Map((await mapLimit(
@@ -257,15 +299,16 @@ async function main() {
     selection: {
       side: "Nod",
       kinds: KINDS,
-      requiresTranscript: true,
-      requiresSpokenWords: true,
-      mediaKind: "voice",
+      requiresTranscript: false,
+      requiresSpokenWords: false,
+      includesVocalSoundSlots: true,
+      includesSupplementalCosmonautDeathEvent: true,
       deduplicateSharedVoiceSets: true,
       excludesUnusedEntities: true,
     },
     summary: {
       unitsFound: units.length,
-      unitsWithTranscriptVoices: units.filter((unit) => unit.cues.length > 0).length,
+      unitsWithVoices: units.filter((unit) => unit.cues.length > 0).length,
       sharedVoiceGroups: groups.length,
       uniqueVoiceAssets: cueIds.size,
       presentations: groups.reduce((total, group) => total + group.cues.length, 0),
@@ -285,7 +328,7 @@ async function main() {
         id: unit.id,
         name: unit.display_name,
         kind: unit.kind,
-        reason: "没有带台词的语音",
+        reason: "没有单位语音或声音",
       })),
       ...ignoredUnits.map((unit) => ({
         id: unit.id,
