@@ -1025,6 +1025,12 @@ async function recordSection(browser, kind, groups) {
   });
   await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
   const visualAudit = await installPresentation(page, kind, groups);
+  const staticLoops = Object.entries(visualAudit.animationMotion)
+    .filter(([, motion]) => motion.playbackMode === "loop" && Number(motion.distinctLoopFrames) < 2)
+    .map(([sequenceId]) => sequenceId);
+  if (staticLoops.length) {
+    throw new Error(`录制前发现静止主体循环：${staticLoops.join("、")}`);
+  }
   const routing = await prepareCableAudio(page);
   const initialTransition = await prepareInitialTransition(
     page,
