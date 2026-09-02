@@ -659,6 +659,7 @@ function assetIcon(format: string): IconName {
 type LayoutMode = "list" | "grid";
 type DetailPlacement = "right" | "bottom";
 type MediaHeaderAlignment = "left" | "center";
+type VoiceTextPreference = "translation" | "game";
 type EntitySort = "cameo" | "faction" | "name_asc" | "name_desc" | "cost_asc" | "cost_desc" | "strength_asc" | "strength_desc";
 type CatalogSearchTarget = "entities" | "media";
 type PreviewAngle = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -1009,6 +1010,7 @@ function includeFocusedMedia(
   focus: CatalogListFocus | null,
   kind: MediaKind,
   sort: MediaSort,
+  voiceTextPreference: VoiceTextPreference,
 ) {
   const target = focus?.target === "media" ? focus.media : undefined;
   if (
@@ -1019,9 +1021,9 @@ function includeFocusedMedia(
   const next = [...items, target];
   next.sort((left, right) => {
     const leftValue = sort === "description_asc"
-      ? mediaPrimaryText(left) : assetDisplayName(left.asset);
+      ? mediaPrimaryText(left, voiceTextPreference) : assetDisplayName(left.asset);
     const rightValue = sort === "description_asc"
-      ? mediaPrimaryText(right) : assetDisplayName(right.asset);
+      ? mediaPrimaryText(right, voiceTextPreference) : assetDisplayName(right.asset);
     const compared = leftValue.localeCompare(rightValue, "zh-CN", { numeric: true });
     return sort === "name_desc" ? -compared : compared;
   });
@@ -1236,6 +1238,12 @@ function storedGameLanguage(): GameLanguage {
     : "zh-CN";
 }
 
+function storedVoiceTextPreference(): VoiceTextPreference {
+  return window.localStorage.getItem("ra2exp-voice-text-preference-v1") === "game"
+    ? "game"
+    : "translation";
+}
+
 function storedPreviewAngle(): PreviewAngle {
   const value = window.localStorage.getItem("ra2exp-preview-angle-v1");
   if (value === null) return DEFAULT_PREVIEW_ANGLE;
@@ -1316,6 +1324,9 @@ function ExplorerApp() {
     window.localStorage.getItem("ra2exp-detail-placement") === "right" ? "right" : "bottom",
   );
   const [gameLanguage, setGameLanguage] = useState<GameLanguage>(storedGameLanguage);
+  const [voiceTextPreference, setVoiceTextPreference] = useState<VoiceTextPreference>(
+    storedVoiceTextPreference,
+  );
   const [previewAngle, setPreviewAngle] = useState<PreviewAngle>(storedPreviewAngle);
   const [entities, setEntities] = useState<EntitySummary[]>([]);
   const [entityTotal, setEntityTotal] = useState(0);
@@ -1475,7 +1486,7 @@ function ExplorerApp() {
     const mediaSuggestions: CatalogSearchSuggestion[] = searchMediaItems.map((media) => ({
       key: `media:${media.asset.id}`,
       target: "media" as const,
-      title: mediaPrimaryText(media),
+      title: mediaPrimaryText(media, voiceTextPreference),
       subtitle: `${assetDisplayName(media.asset)} · ${media.kind === "voice" ? "语音" : "音效"}`,
       meta: media.slots.slice(0, 2).map(mediaSlotLabel).join(" · ") || mediaGroupLabels[media.groups[0]] || "声音",
       score: mediaSuggestionScore(media, searchQuery)
@@ -1497,8 +1508,8 @@ function ExplorerApp() {
     }
     return result;
   }, [
-    searchEntityItems, searchMediaItems, searchQuery, gameLanguage, view, entityKind,
-    isMediaCategory, mediaKind, mediaGroup,
+    searchEntityItems, searchMediaItems, searchQuery, gameLanguage, voiceTextPreference, view,
+    entityKind, isMediaCategory, mediaKind, mediaGroup,
   ]);
   const compactAudioDetail = view === "assets" && isMediaCategory;
   const detailSize = detailPlacement === "bottom"
@@ -1538,6 +1549,11 @@ function ExplorerApp() {
   function updateGameLanguage(next: GameLanguage) {
     setGameLanguage(next);
     window.localStorage.setItem("ra2exp-game-language-v1", next);
+  }
+
+  function updateVoiceTextPreference(next: VoiceTextPreference) {
+    setVoiceTextPreference(next);
+    window.localStorage.setItem("ra2exp-voice-text-preference-v1", next);
   }
 
   function updatePreviewAngle(next: PreviewAngle) {
@@ -2157,6 +2173,7 @@ function ExplorerApp() {
             catalogListFocusRef.current,
             mediaKind,
             mediaSort,
+            voiceTextPreference,
           );
           setMediaItems(nextItems);
           mediaLoadedCountRef.current = page.items.length;
@@ -2186,7 +2203,7 @@ function ExplorerApp() {
     };
   }, [
     sourceId, sourceRevision, selectedCategoryId, mediaKind, mediaGroup, mediaEventType,
-    mediaSort, gameLanguage, view, isMediaCategory,
+    mediaSort, gameLanguage, voiceTextPreference, view, isMediaCategory,
   ]);
 
   useEffect(() => {
@@ -2687,6 +2704,7 @@ function ExplorerApp() {
             sourceId={sourceId}
             sourceRevision={sourceRevision}
             previewAngle={previewAngle}
+            voiceTextPreference={voiceTextPreference}
             originView={view}
             originEntityKind={entityKind}
             originMediaKind={mediaKind}
@@ -2710,6 +2728,7 @@ function ExplorerApp() {
               window.localStorage.setItem("ra2exp-media-grouped-v1", String(next));
             }}
             headerAlignment={mediaHeaderAlignment}
+            voiceTextPreference={voiceTextPreference}
             selectedId={selectedId}
             onSelect={selectMediaCard}
             playingId={playingMediaId}
@@ -2777,6 +2796,7 @@ function ExplorerApp() {
             playerColors={playerColors}
             previewUrl={previewUrl}
             associations={associations}
+            voiceTextPreference={voiceTextPreference}
             wide={detailPlacement === "bottom"}
             scrollKey={`asset:${sourceId}:${selectedId}:${detailPlacement}`}
             onPopout={() => window.open(staticPopoutUrl(new URLSearchParams({ detail: "asset", asset_id: selectedId })), `ra2exp-asset-${selectedId}`, "popup=yes,width=1100,height=780")}
@@ -2814,6 +2834,7 @@ function ExplorerApp() {
               loading={entityDetailLoading}
               playerColors={playerColors}
               defaultPreviewAngle={previewAngle}
+              voiceTextPreference={voiceTextPreference}
               wide={detailPlacement === "bottom"}
               scrollKey={`entity:${sourceId}:${selectedEntityId}:${detailPlacement}`}
               onPopout={() => window.open(staticPopoutUrl(new URLSearchParams({ detail: "entity", source_id: sourceId, entity_id: selectedEntityId })), `ra2exp-entity-${selectedEntityId}`, "popup=yes,width=1100,height=780")}
@@ -2831,6 +2852,8 @@ function ExplorerApp() {
         onDetailPlacementChange={updateDetailPlacement}
         gameLanguage={gameLanguage}
         onGameLanguageChange={updateGameLanguage}
+        voiceTextPreference={voiceTextPreference}
+        onVoiceTextPreferenceChange={updateVoiceTextPreference}
         previewAngle={previewAngle}
         onPreviewAngleChange={updatePreviewAngle}
         mediaHeaderAlignment={mediaHeaderAlignment}
@@ -2903,6 +2926,36 @@ function cleanAudioText(value: string) {
   return value.trim().replace(/^\*+\s*/, "").replace(/\s*\*+$/, "").trim();
 }
 
+function preferredAudioText(
+  localizedText: string | null | undefined,
+  translatedText: string | null | undefined,
+  preference: VoiceTextPreference,
+) {
+  const localized = cleanAudioText(localizedText || "");
+  const translated = cleanAudioText(translatedText || "");
+  if (preference === "game") {
+    if (localized) return { label: "中文", value: localized };
+    if (translated) return { label: "译文", value: translated };
+  } else {
+    if (translated) return { label: "译文", value: translated };
+    if (localized) return { label: "中文", value: localized };
+  }
+  return null;
+}
+
+function preferredMediaTexts(item: MediaItem, preference: VoiceTextPreference) {
+  const localized = uniqueAudioTexts(item.localized_texts || []);
+  const translated = uniqueAudioTexts(item.translated_texts || []);
+  if (preference === "game") {
+    return localized.length > 0
+      ? { label: "中文", values: localized }
+      : { label: "译文", values: translated };
+  }
+  return translated.length > 0
+    ? { label: "译文", values: translated }
+    : { label: "中文", values: localized };
+}
+
 function uniqueAudioTexts(values: Array<string | null | undefined>) {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -2917,15 +2970,16 @@ function uniqueAudioTexts(values: Array<string | null | undefined>) {
   return result;
 }
 
-function mediaPrimaryText(item: MediaItem) {
-  return cleanAudioText(item.localized_texts[0]
+function mediaPrimaryText(item: MediaItem, preference: VoiceTextPreference = "translation") {
+  const preferred = preferredMediaTexts(item, preference).values[0];
+  return cleanAudioText(preferred
     || item.description
     || item.original_texts[0]
     || assetDisplayName(item.asset));
 }
 
-function mediaSecondaryText(item: MediaItem) {
-  const primary = mediaPrimaryText(item);
+function mediaSecondaryText(item: MediaItem, preference: VoiceTextPreference = "translation") {
+  const primary = mediaPrimaryText(item, preference);
   const primaryKey = primary.replace(/\s+/g, " ").toLocaleLowerCase();
   return uniqueAudioTexts([...item.original_texts, assetDisplayName(item.asset)])
     .filter((text) => text.replace(/\s+/g, " ").toLocaleLowerCase() !== primaryKey)
@@ -3227,6 +3281,7 @@ function SearchResultsPanel({
   sourceId,
   sourceRevision,
   previewAngle,
+  voiceTextPreference,
   originView,
   originEntityKind,
   originMediaKind,
@@ -3244,6 +3299,7 @@ function SearchResultsPanel({
   sourceId: string;
   sourceRevision: string;
   previewAngle: PreviewAngle;
+  voiceTextPreference: VoiceTextPreference;
   originView: "assets" | "entities";
   originEntityKind: EntityKind | "";
   originMediaKind: MediaKind;
@@ -3283,8 +3339,8 @@ function SearchResultsPanel({
     const rightScore = mediaSuggestionScore(right, query)
       - (originView === "assets" ? 0.6 : 0)
       - (originView === "assets" && right.kind === originMediaKind ? 0.25 : 0);
-    return leftScore - rightScore || mediaPrimaryText(left).localeCompare(mediaPrimaryText(right), "zh-CN", { numeric: true });
-  }), [media, originMediaKind, originView, query]);
+    return leftScore - rightScore || mediaPrimaryText(left, voiceTextPreference).localeCompare(mediaPrimaryText(right, voiceTextPreference), "zh-CN", { numeric: true });
+  }), [media, originMediaKind, originView, query, voiceTextPreference]);
   const entityKindFacets = entityKindOrder.map((kind) => ({
     kind,
     count: entities.filter((entity) => entity.kind === kind).length,
@@ -3333,8 +3389,8 @@ function SearchResultsPanel({
     onSelectSuggestion({
       key: `media:${item.asset.id}`,
       target: "media",
-      title: mediaPrimaryText(item),
-      subtitle: mediaSecondaryText(item),
+      title: mediaPrimaryText(item, voiceTextPreference),
+      subtitle: mediaSecondaryText(item, voiceTextPreference),
       meta: item.entities.map((entity) => entity.display_name).join(" · "),
       score: mediaSuggestionScore(item, query),
       media: item,
@@ -3367,7 +3423,11 @@ function SearchResultsPanel({
       {mediaGroupFacets.map((facet) => <button key={facet.group} className={mediaGroupFilter === facet.group ? "active" : ""} onClick={() => setMediaGroupFilter(mediaGroupFilter === facet.group ? "" : facet.group)}>{mediaGroupLabels[facet.group] || facet.group}<em>{facet.count}</em></button>)}
     </div>}
     {visibleMedia.length > 0
-      ? <div className="search-media-grid">{visibleMedia.map((item) => <button type="button" className="search-media-card" key={item.asset.id} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => selectMedia(item)}><span className="search-media-play"><Icon name="play" size={15} /></span><span><strong>{mediaPrimaryText(item)}</strong>{mediaSecondaryText(item) && <small>{mediaSecondaryText(item)}</small>}</span><em>{mediaGroupLabels[item.groups[0]] || item.groups[0] || (item.kind === "voice" ? "游戏语音" : "游戏音效")}</em></button>)}</div>
+      ? <div className="search-media-grid">{visibleMedia.map((item) => {
+        const primaryText = mediaPrimaryText(item, voiceTextPreference);
+        const secondaryText = mediaSecondaryText(item, voiceTextPreference);
+        return <button type="button" className="search-media-card" key={item.asset.id} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => selectMedia(item)}><span className="search-media-play"><Icon name="play" size={15} /></span><span><strong>{primaryText}</strong>{secondaryText && <small>{secondaryText}</small>}</span><em>{mediaGroupLabels[item.groups[0]] || item.groups[0] || (item.kind === "voice" ? "游戏语音" : "游戏音效")}</em></button>;
+      })}</div>
       : <div className="search-result-empty">当前结果中没有匹配的声音</div>}
     {media.length < mediaTotal && <button className="load-more search-result-load-more" disabled={loading} onClick={() => void onLoadMoreMedia()}>{loading ? "正在载入…" : `载入更多声音（剩余 ${(mediaTotal - media.length).toLocaleString("zh-CN")}）`}</button>}
   </section>;
@@ -3382,7 +3442,7 @@ function SearchResultsPanel({
   </section>;
 }
 
-function MediaListPanel({ items, total, loading, search, groups, selectedGroup, setSelectedGroup, eventTypes, selectedEventType, setSelectedEventType, grouped, setGrouped, headerAlignment, selectedId, onSelect, playingId, sort, setSort, layout, setLayout, onLoadMore, scrollKey, scrollResetRevision, catalogFocus, onCatalogFocusComplete }: {
+function MediaListPanel({ items, total, loading, search, groups, selectedGroup, setSelectedGroup, eventTypes, selectedEventType, setSelectedEventType, grouped, setGrouped, headerAlignment, voiceTextPreference, selectedId, onSelect, playingId, sort, setSort, layout, setLayout, onLoadMore, scrollKey, scrollResetRevision, catalogFocus, onCatalogFocusComplete }: {
   items: MediaItem[];
   total: number;
   loading: boolean;
@@ -3396,6 +3456,7 @@ function MediaListPanel({ items, total, loading, search, groups, selectedGroup, 
   grouped: boolean;
   setGrouped: (value: boolean) => void;
   headerAlignment: MediaHeaderAlignment;
+  voiceTextPreference: VoiceTextPreference;
   selectedId: string;
   onSelect: (id: string) => void;
   playingId: string;
@@ -3484,16 +3545,18 @@ function MediaListPanel({ items, total, loading, search, groups, selectedGroup, 
 
   function renderMediaItem(item: MediaItem) {
     const textCount = uniqueAudioTexts(item.texts).length;
+    const primaryText = mediaPrimaryText(item, voiceTextPreference);
+    const secondaryText = mediaSecondaryText(item, voiceTextPreference);
     if (layout === "list") {
       return <button key={item.asset.id} data-catalog-item-id={item.asset.id} className={`asset-row media-row ${selectedId === item.asset.id ? "selected" : ""} ${playingId === item.asset.id ? "playing" : ""}`} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => onSelect(item.asset.id)}>
         <span className="file-icon format-audio"><Icon name={playingId === item.asset.id ? "pause" : "play"} /></span>
-        <span className="asset-main"><strong>{mediaPrimaryText(item)}</strong>{(mediaSecondaryText(item) || textCount > 1) && <small>{mediaSecondaryText(item)}{textCount > 1 ? `${mediaSecondaryText(item) ? " · " : ""}${textCount} 条文本` : ""}</small>}</span>
+        <span className="asset-main"><strong>{primaryText}</strong>{(secondaryText || textCount > 1) && <small>{secondaryText}{textCount > 1 ? `${secondaryText ? " · " : ""}${textCount} 条文本` : ""}</small>}</span>
         <span className="media-links">{item.entities.slice(0, 2).map((entity) => entity.display_name).join(" · ") || item.slots.slice(0, 2).map(mediaSlotLabel).join(" · ") || "未关联"}</span>
         <Icon name="chevron" size={15} />
       </button>;
     }
     return <button key={item.asset.id} data-catalog-item-id={item.asset.id} className={`asset-card media-card ${selectedId === item.asset.id ? "selected" : ""} ${playingId === item.asset.id ? "playing" : ""}`} onPointerEnter={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onFocus={() => void preloadAudioResource(api.mediaUrl(item.asset.id), "foreground")} onClick={() => onSelect(item.asset.id)}>
-      <span className="asset-card-copy"><strong title={mediaPrimaryText(item)}>{mediaPrimaryText(item)}</strong>{mediaSecondaryText(item) && <small title={mediaSecondaryText(item)}>{mediaSecondaryText(item)}</small>}<em>{item.slots.slice(0, 2).map(mediaSlotLabel).join(" · ") || "未分类"}</em></span>
+      <span className="asset-card-copy"><strong title={primaryText}>{primaryText}</strong>{secondaryText && <small title={secondaryText}>{secondaryText}</small>}<em>{item.slots.slice(0, 2).map(mediaSlotLabel).join(" · ") || "未分类"}</em></span>
     </button>;
   }
 
@@ -3668,6 +3731,7 @@ function mediaSuggestionScore(item: MediaItem, query: string) {
       ...item.texts,
       ...item.original_texts,
       ...item.localized_texts,
+      ...(item.translated_texts || []),
       ...item.events,
       ...item.slots,
       ...(item.mission ? [missionLabel(item.mission)] : []),
@@ -4687,11 +4751,15 @@ function ImageViewport({ src, alt, fitKey, fitContent = true, frameFit = null, b
   </div>;
 }
 
-function EntitySoundSample({ sample }: { sample: MediaSample }) {
-  const originalText = sample.original_text || sample.text;
-  const localizedText = sample.localized_text && sample.localized_text !== originalText
-    ? sample.localized_text
-    : null;
+function EntitySoundSample({ sample, voiceTextPreference }: { sample: MediaSample; voiceTextPreference: VoiceTextPreference }) {
+  const originalText = sample.original_text
+    || (!sample.localized_text && !sample.translated_text ? sample.text : null);
+  const preferredText = preferredAudioText(
+    sample.localized_text,
+    sample.translated_text,
+    voiceTextPreference,
+  );
+  const localizedText = preferredText?.value !== originalText ? preferredText : null;
   const internalName = audioDisplayName(sample.name);
   return <div className="media-sample">
     <strong className="media-sample-id" title={sample.asset?.display_name || sample.name}>{internalName}{sample.weight > 1 && <em>×{sample.weight}</em>}</strong>
@@ -4700,7 +4768,7 @@ function EntitySoundSample({ sample }: { sample: MediaSample }) {
       : <em className="media-sample-missing">未解析</em>}
     <span className={`media-sample-texts ${localizedText ? "bilingual" : "single"}`}>
       {originalText && <span className="media-sample-copy" title={originalText}><b>原文</b>{originalText}</span>}
-      {localizedText && <span className="media-sample-copy" title={localizedText}><b>中文</b>{localizedText}</span>}
+      {localizedText && <span className="media-sample-copy" title={localizedText.value}><b>{localizedText.label}</b>{localizedText.value}</span>}
     </span>
     {sample.asset && audioFormats.includes(sample.asset.format) && <AudioDownloadAction assetId={sample.asset.id} label={internalName} />}
   </div>;
@@ -4752,13 +4820,14 @@ function mergeSoundAssociations(associations: MediaAssociation[]): DisplaySoundA
   return [...merged.values()];
 }
 
-function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, playerColors, defaultPreviewAngle, wide = false, onPopout, scrollKey = "" }: {
+function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, playerColors, defaultPreviewAngle, voiceTextPreference, wide = false, onPopout, scrollKey = "" }: {
   sourceId: string;
   sourceRevision?: string;
   entity: GameEntity | null;
   loading: boolean;
   playerColors: PlayerColor[];
   defaultPreviewAngle: PreviewAngle;
+  voiceTextPreference: VoiceTextPreference;
   wide?: boolean;
   onPopout?: () => void;
   scrollKey?: string;
@@ -5313,7 +5382,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
             <div className={`media-association-list ${associationLayout === "grid" ? "media-association-grid" : ""}`}>
               {soundAssociations.map((association) => <article key={`${association.kind}-${association.event}`}>
                 <header><span className="media-association-slots">{association.slots.map((slot) => <strong key={slot}>{mediaSlotLabel(slot)}</strong>)}</span><code>{association.event}</code><em>{association.samples.length}</em></header>
-                <div>{association.samples.map((sample) => <EntitySoundSample sample={sample} key={`${association.event}-${sample.asset?.id || sample.name}`} />)}</div>
+                <div>{association.samples.map((sample) => <EntitySoundSample sample={sample} voiceTextPreference={voiceTextPreference} key={`${association.event}-${sample.asset?.id || sample.name}`} />)}</div>
               </article>)}
             </div>
           </section>}
@@ -5389,7 +5458,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   );
 }
 
-function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, frame, setFrame, playing, setPlaying, palettes, paletteId, setPaletteId, playerColors, previewUrl, associations, wide = false, onPopout, scrollKey = "" }: {
+function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, frame, setFrame, playing, setPlaying, palettes, paletteId, setPaletteId, playerColors, previewUrl, associations, voiceTextPreference, wide = false, onPopout, scrollKey = "" }: {
   asset: Asset | null;
   metadata: AssetMetadata | null;
   textAsset: TextAsset | null;
@@ -5405,6 +5474,7 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
   playerColors: PlayerColor[];
   previewUrl: string;
   associations: AssetAssociationPage | null;
+  voiceTextPreference: VoiceTextPreference;
   wide?: boolean;
   onPopout?: () => void;
   scrollKey?: string;
@@ -5470,8 +5540,8 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
   const canChoosePalette = ["shp", "vxl", "hva", "tmp"].includes(asset.format) && palettes.length > 0;
   const originalTexts = uniqueAudioTexts([
     ...(associations?.original_texts || []),
-    ...(associations?.items || []).map((item) => item.original_text || (item.localized_text ? null : item.text)).filter((item): item is string => Boolean(item)),
-    ...(associations && associations.original_texts.length === 0 && associations.localized_texts.length === 0
+    ...(associations?.items || []).map((item) => item.original_text || (item.localized_text || item.translated_text ? null : item.text)).filter((item): item is string => Boolean(item)),
+    ...(associations && associations.original_texts.length === 0 && associations.localized_texts.length === 0 && (associations.translated_texts || []).length === 0
       ? associations.texts
       : []),
   ]);
@@ -5481,6 +5551,18 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
     ...(associations?.items || []).map((item) => item.localized_text).filter((item): item is string => Boolean(item)),
   ])
     .filter((item) => !originalTextKeys.has(item.trim().replace(/\s+/g, " ").toLocaleLowerCase()));
+  const translatedTexts = uniqueAudioTexts([
+    ...(associations?.translated_texts || []),
+    ...(associations?.items || []).map((item) => item.translated_text).filter((item): item is string => Boolean(item)),
+  ])
+    .filter((item) => !originalTextKeys.has(item.trim().replace(/\s+/g, " ").toLocaleLowerCase()));
+  const preferredTexts = voiceTextPreference === "game"
+    ? localizedTexts.length > 0
+      ? { label: "中文", values: localizedTexts }
+      : { label: "译文", values: translatedTexts }
+    : translatedTexts.length > 0
+      ? { label: "译文", values: translatedTexts }
+      : { label: "中文", values: localizedTexts };
   const metadataRows: Array<{ label: string; value: string; tone?: string; span?: 1 | 2 | 3 }> = isAudio
     ? []
     : [{ label: "文件大小", value: formatBytes(asset.size) }];
@@ -5525,7 +5607,7 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
   ] : [];
   const audioTextRows = isAudio ? [
     ...(originalTexts.length > 0 ? [{ label: "原文", value: originalTexts.join("\n") }] : []),
-    ...(localizedTexts.length > 0 ? [{ label: "中文", value: localizedTexts.join("\n") }] : []),
+    ...(preferredTexts.values.length > 0 ? [{ label: preferredTexts.label, value: preferredTexts.values.join("\n") }] : []),
   ] : [];
   const audioDataCount = audioMetadataTags.length + audioTextRows.length;
   return (
@@ -5591,13 +5673,13 @@ function DetailPanel({ asset, metadata, textAsset, textQuery, setTextQuery, fram
         <h3>关联事件</h3>
         <div>{(isAudio ? audioRelationshipItems : associations.items).map((item, index) => {
           const originalText = cleanAudioText(item.original_text || item.text || "");
-          const localizedText = cleanAudioText(item.localized_text || "");
+          const preferredText = preferredAudioText(item.localized_text, item.translated_text, voiceTextPreference);
           return <article key={`${item.scope}-${item.event}-${item.slot}-${index}`}>
             <span>{mediaSlotLabel(item.slot)}</span>
             <strong>{item.entity?.display_name || item.event}</strong>
             {item.entity && <code>{item.event}</code>}
             {originalText && <p><b>原文</b>{originalText}</p>}
-            {localizedText && localizedText !== originalText && <p><b>中文</b>{localizedText}</p>}
+            {preferredText && preferredText.value !== originalText && <p><b>{preferredText.label}</b>{preferredText.value}</p>}
           </article>;
         })}</div>
       </div>}
@@ -5632,6 +5714,8 @@ function SettingsDialog({
   onDetailPlacementChange,
   gameLanguage,
   onGameLanguageChange,
+  voiceTextPreference,
+  onVoiceTextPreferenceChange,
   previewAngle,
   onPreviewAngleChange,
   mediaHeaderAlignment,
@@ -5662,6 +5746,8 @@ function SettingsDialog({
   onDetailPlacementChange: (placement: DetailPlacement) => void;
   gameLanguage: GameLanguage;
   onGameLanguageChange: (language: GameLanguage) => void;
+  voiceTextPreference: VoiceTextPreference;
+  onVoiceTextPreferenceChange: (preference: VoiceTextPreference) => void;
   previewAngle: PreviewAngle;
   onPreviewAngleChange: (angle: PreviewAngle) => void;
   mediaHeaderAlignment: MediaHeaderAlignment;
@@ -5746,6 +5832,13 @@ function SettingsDialog({
                   <div className="layout-choice" role="group" aria-label="游戏文本语言">
                     <button type="button" className={gameLanguage === "zh-CN" ? "active" : ""} onClick={() => onGameLanguageChange("zh-CN")}>简体中文</button>
                     <button type="button" className={gameLanguage === "zh-TW" ? "active" : ""} onClick={() => onGameLanguageChange("zh-TW")}>繁體中文</button>
+                  </div>
+                </div>
+                <div className="display-setting-row">
+                  <strong>语音文本</strong>
+                  <div className="layout-choice" role="group" aria-label="语音中文显示优先级">
+                    <button type="button" className={voiceTextPreference === "translation" ? "active" : ""} onClick={() => onVoiceTextPreferenceChange("translation")}>译文优先</button>
+                    <button type="button" className={voiceTextPreference === "game" ? "active" : ""} onClick={() => onVoiceTextPreferenceChange("game")}>游戏中文优先</button>
                   </div>
                 </div>
                 <div className="display-setting-row">
@@ -5847,6 +5940,7 @@ function SettingsDialog({
 
 function DetachedEntityDetail({ sourceId, entityId }: { sourceId: string; entityId: string }) {
   const [gameLanguage] = useState<GameLanguage>(storedGameLanguage);
+  const [voiceTextPreference] = useState<VoiceTextPreference>(storedVoiceTextPreference);
   const [previewAngle] = useState<PreviewAngle>(storedPreviewAngle);
   const [entity, setEntity] = useState<GameEntity | null>(null);
   const [colors, setColors] = useState<PlayerColor[]>([]);
@@ -5864,11 +5958,12 @@ function DetachedEntityDetail({ sourceId, entityId }: { sourceId: string; entity
       })
       .catch((reason: Error) => setError(reason.message));
   }, [sourceId, entityId, gameLanguage]);
-  return <main className="detached-shell">{error ? <div className="detached-error">{error}</div> : <EntityDetailPanel sourceId={sourceId} entity={entity} loading={!entity} playerColors={colors} defaultPreviewAngle={previewAngle} wide scrollKey={`detached-entity:${sourceId}:${entityId}`} />}</main>;
+  return <main className="detached-shell">{error ? <div className="detached-error">{error}</div> : <EntityDetailPanel sourceId={sourceId} entity={entity} loading={!entity} playerColors={colors} defaultPreviewAngle={previewAngle} voiceTextPreference={voiceTextPreference} wide scrollKey={`detached-entity:${sourceId}:${entityId}`} />}</main>;
 }
 
 function DetachedAssetDetail({ assetId }: { assetId: string }) {
   const [gameLanguage] = useState<GameLanguage>(storedGameLanguage);
+  const [voiceTextPreference] = useState<VoiceTextPreference>(storedVoiceTextPreference);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [metadata, setMetadata] = useState<AssetMetadata | null>(null);
   const [associations, setAssociations] = useState<AssetAssociationPage | null>(null);
@@ -5912,7 +6007,7 @@ function DetachedAssetDetail({ assetId }: { assetId: string }) {
   const previewUrl = asset && imageFormats.includes(asset.format)
     ? api.previewUrl(asset.id, frame, paletteId, asset.format === "pcx" ? 1 : asset.format === "shp" ? 5 : 4)
     : "";
-  return <main className="detached-shell">{error ? <div className="detached-error">{error}</div> : <DetailPanel asset={asset} metadata={metadata} textAsset={textAsset} textQuery={textQuery} setTextQuery={setTextQuery} frame={frame} setFrame={setFrame} playing={playing} setPlaying={setPlaying} palettes={palettes} paletteId={paletteId} setPaletteId={setPaletteId} playerColors={colors} previewUrl={previewUrl} associations={associations} wide scrollKey={`detached-asset:${assetId}`} />}</main>;
+  return <main className="detached-shell">{error ? <div className="detached-error">{error}</div> : <DetailPanel asset={asset} metadata={metadata} textAsset={textAsset} textQuery={textQuery} setTextQuery={setTextQuery} frame={frame} setFrame={setFrame} playing={playing} setPlaying={setPlaying} palettes={palettes} paletteId={paletteId} setPaletteId={setPaletteId} playerColors={colors} previewUrl={previewUrl} associations={associations} voiceTextPreference={voiceTextPreference} wide scrollKey={`detached-asset:${assetId}`} />}</main>;
 }
 
 function App() {

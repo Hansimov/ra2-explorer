@@ -6,6 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from ra2_explorer.reference_data import (
     BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH,
+    BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH,
     load_audio_transcript,
 )
 
@@ -59,7 +60,7 @@ def test_audio_transcript_merges_local_mission_supplement(tmp_path) -> None:
     assert entries["giselea"]["text"] == "Sir, yes sir!"
     assert entries["a01_p01"] == {
         "original_text": "Protect the Time Machine.",
-        "localized_text": "保护时间机器。",
+        "translated_text": "保护时间机器。",
         "speaker": "EVA",
         "text": "Protect the Time Machine.",
     }
@@ -109,8 +110,36 @@ def test_bundled_expansion_unit_intel_has_spoken_text_and_translation(tmp_path) 
 
     assert len(entries) == 110
     assert entries["csofu39"]["original_text"].startswith("Yuri's Boomer submarine")
-    assert "雷鸣攻击潜艇" in entries["csofu39"]["localized_text"]
-    assert entries["cevau94"]["localized_text"].startswith("战乱中")
+    assert "雷鸣攻击潜艇" in entries["csofu39"]["translated_text"]
+    assert "localized_text" not in entries["csofu39"]
+    assert entries["cevau94"]["translated_text"].startswith("战乱中")
+
+
+def test_bundled_unit_voice_translation_does_not_replace_original_text(tmp_path) -> None:
+    path = tmp_path / "audio-transcript.xlsx"
+    path.write_bytes(
+        _audio_transcript_workbook(
+            (("$ilasmod.wav", "Fuel mix optimal", "Cosmonaut", "Move", "", "Soviet"),)
+        )
+    )
+
+    entries = load_audio_transcript(
+        path,
+        supplement_paths=(BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH,),
+    )
+
+    assert entries["ilasmod"]["original_text"] == "Fuel mix optimal"
+    assert entries["ilasmod"]["translated_text"] == "燃料混合比最佳。"
+    assert "localized_text" not in entries["ilasmod"]
+
+
+def test_bundled_soviet_infantry_voice_translation_is_complete() -> None:
+    payload = json.loads(BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH.read_text(encoding="utf-8"))
+
+    assert len(payload["entries"]) == 163
+    assert all(entry.get("translated_text") for entry in payload["entries"].values())
+    assert payload["entries"]["idogdiea"]["translated_text"] == "呜咽声"
+    assert payload["entries"]["ilasdia"]["translated_text"] == "无法呼吸！"
 
 
 def test_audio_transcript_corrects_verified_rotated_harvest_groups(tmp_path) -> None:

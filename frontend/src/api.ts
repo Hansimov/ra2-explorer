@@ -319,6 +319,8 @@ export interface MediaSample {
   text: string | null;
   original_text: string | null;
   localized_text: string | null;
+  localized_text_origin: "game" | "translation" | null;
+  translated_text: string | null;
   text_label: string | null;
   asset: EntityComponentAsset | null;
   animation: AnimationPlayback | null;
@@ -349,6 +351,8 @@ export interface AssetAssociation {
   text: string | null;
   original_text: string | null;
   localized_text: string | null;
+  localized_text_origin: "game" | "translation" | null;
+  translated_text: string | null;
 }
 
 export interface AssetAssociationPage {
@@ -357,6 +361,8 @@ export interface AssetAssociationPage {
   texts: string[];
   original_texts: string[];
   localized_texts: string[];
+  localized_text_origins: Array<"game" | "translation">;
+  translated_texts: string[];
 }
 
 export interface EntityPage {
@@ -379,6 +385,8 @@ export interface MediaItem {
   texts: string[];
   original_texts: string[];
   localized_texts: string[];
+  localized_text_origins: Array<"game" | "translation">;
+  translated_texts: string[];
   events: string[];
   slots: string[];
   entities: Array<{

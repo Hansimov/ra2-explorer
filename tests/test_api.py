@@ -325,7 +325,8 @@ def test_fixture_library_is_browsable_and_previewable(tmp_path: Path) -> None:
     assert media_items[0]["description"] == "准备测试。"
     assert media_items[0]["groups"] == ["selection_voice"]
     assert media_items[0]["original_texts"] == ["Ready for the test."]
-    assert media_items[0]["localized_texts"] == ["准备测试。"]
+    assert media_items[0]["localized_texts"] == []
+    assert media_items[0]["translated_texts"] == ["准备测试。"]
     assert "zhunbeiceshi" in media_items[0]["search_aliases"]["pinyin_compact"]
     assert {item["event_type"] for item in semantic_media.json()["event_types"]} >= {
         "select",
@@ -430,7 +431,8 @@ def test_fixture_library_is_browsable_and_previewable(tmp_path: Path) -> None:
     assert select_voice["event"] == "FixtureSelect"
     assert select_voice["samples"][0]["text"] == "准备测试。"
     assert select_voice["samples"][0]["original_text"] == "Ready for the test."
-    assert select_voice["samples"][0]["localized_text"] == "准备测试。"
+    assert select_voice["samples"][0]["localized_text"] is None
+    assert select_voice["samples"][0]["translated_text"] == "准备测试。"
     assert select_voice["samples"][0]["text_label"] == "VOX:fixture_event"
     assert select_voice["samples"][0]["asset"]["display_name"] == "fixture.wav"
     assert select_voice["samples"][0]["weight"] == 2
@@ -443,7 +445,8 @@ def test_fixture_library_is_browsable_and_previewable(tmp_path: Path) -> None:
         item["entity"]["id"] == "DemoVehicle"
         and item["text"] == "准备测试。"
         and item["original_text"] == "Ready for the test."
-        and item["localized_text"] == "准备测试。"
+        and item["localized_text"] is None
+        and item["translated_text"] == "准备测试。"
         for item in association_items
         if item["entity"]
     )
@@ -717,14 +720,19 @@ def test_verified_unit_intro_overrides_csf_unit_name_text() -> None:
             "csofu39": {
                 "text": "Yuri's Boomer submarine combines stealth and ballistic missiles.",
                 "original_text": "Yuri's Boomer submarine combines stealth and ballistic missiles.",
-                "localized_text": "尤里的雷鸣攻击潜艇兼具隐蔽性与弹道导弹能力。",
+                "translated_text": "尤里的雷鸣攻击潜艇兼具隐蔽性与弹道导弹能力。",
             }
         },
     )
 
     assert voice_strings["csofu39"].original_text.startswith("Yuri's Boomer")
-    assert voice_strings["csofu39"].localized_text == "尤里的雷鸣攻击潜艇兼具隐蔽性与弹道导弹能力。"
-    assert voice_strings["csofu39"].text == voice_strings["csofu39"].localized_text
+    assert voice_strings["csofu39"].localized_text == "雷鸣攻击潜舰"
+    assert (
+        voice_strings["csofu39"].translated_text
+        == "尤里的雷鸣攻击潜艇兼具隐蔽性与弹道导弹能力。"
+    )
+    assert voice_strings["csofu39"].text == voice_strings["csofu39"].translated_text
+    assert voice_strings["csofu39"].localized_text_origin == "game"
 
 
 def test_eva_media_groups_separate_missions_and_nonverbal_prompts() -> None:
@@ -874,7 +882,9 @@ def test_unassociated_voice_keeps_catalog_transcript_in_asset_data(
         "total": 0,
         "texts": ["下达指令了：攻击！"],
         "original_texts": ["The order is given. Attack!"],
-        "localized_texts": ["下达指令了：攻击！"],
+        "localized_texts": [],
+        "localized_text_origins": [],
+        "translated_texts": ["下达指令了：攻击！"],
     }
 
 

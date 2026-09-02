@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "description": "Verified Yuri's Revenge unit-intelligence voice transcripts and Simplified Chinese translations.",
+  "localized_text_origin": "translation",
   "entries": {
     "cevau39": {
       "original_text": "Yuri's Boomer submarines have ballistic missiles that can be fired from a great distance. Send dolphins and destroyers out as soon as you detect one.",

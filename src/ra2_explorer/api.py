@@ -50,6 +50,7 @@ from ra2_explorer.library import AssetReader, SourceLibrary
 from ra2_explorer.localization import DEFAULT_GAME_LANGUAGE, GameLanguage
 from ra2_explorer.reference_data import (
     BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH,
+    BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH,
     load_audio_transcript,
     load_known_names,
     reference_status,
@@ -120,6 +121,7 @@ class Services:
                     settings.mission_audio_transcript_path,
                     settings.english_voice_transcript_path,
                     BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH,
+                    BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH,
                 ),
             ),
         )
