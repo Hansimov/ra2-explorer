@@ -11,21 +11,23 @@
     "width": 2560,
     "height": 1440,
     "frameRate": 30,
-    "playbackRate": 1.18,
-    "targetDurationSeconds": [
-      240,
-      340
-    ]
+    "videoCrf": 15,
+    "audioBitrate": "192k"
   },
   "audio": {
     "outputDevice": "CABLE Input (VB-Audio Virtual Cable)",
     "captureDevice": "CABLE Output (VB-Audio Virtual Cable)",
-    "presentationDelaySeconds": 0.55,
-    "narrationLufs": -18
+    "cueLeadSeconds": 0.28,
+    "cueGapSeconds": 0.22,
+    "presentationDelaySeconds": 0.18
   },
-  "narration": {
-    "engine": "IndexTTS 2.5",
-    "precision": "BF16",
-    "promptFilename": "BV1Rw411a7AC.wav"
+  "visual": {
+    "playerColor": "red",
+    "previewAngle": 1,
+    "frameIntervalMs": 120,
+    "voxelFacingIntervalMs": 520,
+    "unitIntroSeconds": 1.0,
+    "sectionIntroSeconds": 2.3,
+    "sectionOutroSeconds": 1.4
   }
 }

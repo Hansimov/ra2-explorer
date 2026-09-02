@@ -16,6 +16,10 @@ recording-manifest.json
 showcase-manifest.json
 qa-report.json
 soviet-voices-plan.json
+soviet-voices-*/
+latest-soviet-voices.txt
+latest-soviet-voices.json
+RA2-Explorer-Soviet-Voices-*.mp4
 concat.txt
 chapters.ffmeta
 

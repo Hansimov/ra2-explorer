@@ -86,6 +86,7 @@ function visualInfo(entity) {
     cameoAssetId: cameo?.id || "",
     bodyAssetId: body?.id || "",
     bodyFormat: body?.format || entity.body_format || "",
+    contentFrameCount: entity.preview?.frame_count || 1,
     sourceFrameCount: entity.preview?.source_frame_count || entity.preview?.frame_count || 1,
     facingCount: entity.preview?.facing_count || 1,
     sequences: bodySequences(entity),
@@ -235,11 +236,16 @@ async function main() {
     for (const cue of group.cues) {
       const metadata = cueMetadata.get(cue.assetId) || {};
       cue.durationSeconds = Number(metadata.duration_seconds || 0);
+      cue.sizeBytes = Number(metadata.size || 0);
     }
   }
   const cueIds = new Set(groups.flatMap((group) => group.cues.map((cue) => cue.assetId)));
   const audioDurationSeconds = groups.reduce(
     (total, group) => total + group.cues.reduce((sum, cue) => sum + cue.durationSeconds, 0),
+    0,
+  );
+  const audioBytes = [...cueIds].reduce(
+    (total, assetId) => total + Number(cueMetadata.get(assetId)?.size || 0),
     0,
   );
   const output = {
@@ -264,6 +270,7 @@ async function main() {
       uniqueVoiceAssets: cueIds.size,
       presentations: groups.reduce((total, group) => total + group.cues.length, 0),
       audioDurationSeconds: Number(audioDurationSeconds.toFixed(3)),
+      audioBytes,
       byKind: Object.fromEntries(KINDS.map((kind) => [kind, {
         units: units.filter((unit) => unit.kind === kind).length,
         unitsWithVoices: units.filter((unit) => unit.kind === kind && unit.cues.length > 0).length,
@@ -303,7 +310,11 @@ async function main() {
   }, null, 2));
 }
 
-main().catch((error) => {
-  console.error(error.stack || error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { main };
