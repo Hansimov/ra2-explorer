@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const { chromium } = require("playwright");
+const { animationMatchesSlot, chooseCueEvent, eventLabel } = require("./voice-event-semantics.cjs");
 
 const ROOT = path.resolve(__dirname);
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "voice-video.config.json"), "utf8"));
@@ -20,19 +21,6 @@ const HEIGHT = CONFIG.viewport.height;
 const SOURCE_WIDTH = CONFIG.output.width;
 const SOURCE_HEIGHT = CONFIG.output.height;
 const FPS = CONFIG.output.frameRate;
-const EVENT_LABELS = {
-  select: "选择",
-  create: "出场",
-  move: "移动",
-  attack: "攻击",
-  feedback: "受击",
-  special_attack: "特殊攻击",
-  enter: "进入",
-  capture: "占领",
-  deploy: "部署",
-  harvest: "采集",
-  die: "阵亡",
-};
 const SECTION_LABELS = { infantry: "苏军步兵单位语音" };
 
 for (const directory of [RUN_DIR, RAW_DIR, AUDIO_DIR, POSTER_DIR]) {
@@ -81,8 +69,10 @@ function entityPreviewUrl(sourceId, entityId, facing, scale = 8) {
   return `${BASE_URL}/api/entities/${encodeURIComponent(sourceId)}/${encodeURIComponent(entityId)}/preview.png?${params}`;
 }
 
-function sequenceMatches(sequence, expression) {
-  return [sequence.event, ...(sequence.aliases || [])].some((value) => expression.test(String(value)));
+function sequenceNamed(sequence, names) {
+  const accepted = new Set(names.map((name) => name.toLowerCase()));
+  return [sequence.event, ...(sequence.aliases || [])]
+    .some((value) => accepted.has(String(value).toLowerCase()));
 }
 
 function validSequence(visual, sequence) {
@@ -105,25 +95,40 @@ function sequenceKey(sequence) {
   ].join(":");
 }
 
-function sequenceCandidatesForSlot(visual, slot) {
+function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
   const sequences = (visual.sequences || []).filter((sequence) => validSequence(visual, sequence));
+  const flying = sequences.some((sequence) => sequenceNamed(sequence, ["fly"]));
+  const weaponPreferences = /deploy/i.test(String(eventName || ""))
+    ? [["deployedfire"], ["deploy"], ["fireup"]]
+    : unitId === "LUNR" ? [["firefly"], ["fireup"]]
+      : ["TERROR", "IVAN"].includes(unitId) ? [["deploy"], ["fireup"]]
+        : [["fireup"], ["deployedfire"], ["fireprone"]];
   const preferences = {
-    select: [/idle1|idle2|ready|guard|cheer/i, /walk/i],
-    create: [/cheer|idle1|idle2|ready|guard/i, /walk/i],
-    move: [/walk|fly|swim|crawl|move/i, /idle1|idle2|ready|guard/i],
-    enter: [/walk|crawl|enter|move/i, /idle1|idle2|ready|guard/i],
-    capture: [/walk|capture|deploy|crawl/i, /idle1|idle2|ready|guard/i],
-    deploy: [/deploy|deployedfire|down|up/i, /idle1|idle2|ready|guard/i],
-    harvest: [/walk|harvest|work/i, /idle1|idle2|ready|guard/i],
-    attack: [/fireup|fireprone|deployedfire|firefly|fire|attack|shoot/i, /walk|ready|guard/i],
-    special_attack: [/deploy|deployedfire|fireup|fireprone|firefly|fire|attack/i, /walk|ready|guard/i],
-    feedback: [/down|crawl|up|tumble|panic/i, /walk|idle1|idle2|ready|guard/i],
-    die: [/die1|die2|airdeathstart|airdeathfinish|death|tumble/i, /down|crawl|idle1/i],
+    select: [["idle1", "idle2", "ready", "guard"], ["cheer"], ["walk"]],
+    create: [["cheer"], ["idle1", "idle2"], ["walk"]],
+    move: flying ? [["fly"], ["walk"]] : [["walk", "swim"], ["idle1", "idle2"]],
+    enter: [["walk", "enter"], ["idle1", "idle2"]],
+    capture: [["walk", "capture"], ["deploy"], ["idle1", "idle2"]],
+    deploy: [["deploy"], ["deployedfire"], ["down"], ["idle1", "idle2"]],
+    harvest: [["work", "harvest"], ["walk"], ["idle1", "idle2"]],
+    attack: (
+      unitId === "LUNR" ? [["firefly"], ["fireup"]]
+        : ["TERROR", "IVAN"].includes(unitId) ? [["deploy"], ["fireup"]]
+          : [["fireup"], ["deployedfire"], ["fireprone"]]
+    ),
+    weapon: weaponPreferences,
+    special_attack: [["deploy", "deployedfire"], ["firefly", "fireup"], ["idle1", "idle2"]],
+    feedback: (
+      unitId === "LUNR" ? [["tumble"], ["down"], ["idle2", "idle1"]]
+        : unitId === "DOG" ? [["idle2", "idle1"]]
+          : [["down"], ["idle2", "idle1"]]
+    ),
+    die: unitId === "LUNR" ? [["airdeathstart"]] : [["die1", "die2"], ["death"]],
   };
-  for (const expression of preferences[slot] || preferences.select) {
+  for (const names of preferences[slot] || preferences.select) {
     const matched = [];
     const seen = new Set();
-    for (const sequence of sequences.filter((candidate) => sequenceMatches(candidate, expression))) {
+    for (const sequence of sequences.filter((candidate) => sequenceNamed(candidate, names))) {
       const key = sequenceKey(sequence);
       if (seen.has(key)) continue;
       seen.add(key);
@@ -134,7 +139,26 @@ function sequenceCandidatesForSlot(visual, slot) {
   return sequences.slice(0, 1);
 }
 
-function sequenceAnimation(group, slot, sourceId, ordinal) {
+function sequenceFrames(visual, sequence) {
+  const pairedShadow = visual.sourceFrameCount === visual.contentFrameCount * 2;
+  const shadowOffset = pairedShadow ? visual.contentFrameCount : 0;
+  const facingOffset = sequence.facing_step ? 5 * sequence.facing_step : 0;
+  return Array.from({ length: Math.min(24, Math.max(1, Number(sequence.frame_count) || 1)) }, (_, index) => {
+    const frame = Number(sequence.start_frame || 0)
+      + facingOffset
+      + index * Math.max(1, Number(sequence.frame_step || 1));
+    const shadowFrame = pairedShadow && frame < shadowOffset && frame + shadowOffset < visual.sourceFrameCount
+      ? frame + shadowOffset
+      : undefined;
+    return assetPreviewUrl(sequence.assetId, frame, shadowFrame, 8, { paletteKind: sequence.palette || "unit" });
+  });
+}
+
+function animationPosture(event) {
+  return /down|crawl|up|prone|die|death|tumble|deploy/i.test(String(event)) ? "low" : "normal";
+}
+
+function sequenceAnimation(group, slot, sourceId, ordinal, eventName) {
   const visual = group.representative.visual;
   if (visual.bodyFormat === "vxl") {
     const facingOrder = [0, 7, 6, 5, 4, 3, 2, 1];
@@ -142,35 +166,39 @@ function sequenceAnimation(group, slot, sourceId, ordinal) {
       event: "facing",
       frames: facingOrder.map((facing) => entityPreviewUrl(sourceId, group.representative.id, facing)),
       intervalMs: CONFIG.visual.voxelFacingIntervalMs,
+      posture: "normal",
     };
   }
-  const candidates = sequenceCandidatesForSlot(visual, slot);
+  if (slot === "die" && group.representative.id === "LUNR") {
+    const airDeath = ["airdeathstart", "airdeathfinish"]
+      .map((name) => (visual.sequences || []).find((sequence) => (
+        validSequence(visual, sequence) && sequenceNamed(sequence, [name])
+      )))
+      .filter(Boolean);
+    if (airDeath.length === 2) {
+      return {
+        event: "airdeathstart+airdeathfinish",
+        frames: airDeath.flatMap((sequence) => sequenceFrames(visual, sequence)),
+        intervalMs: CONFIG.visual.frameIntervalMs,
+        posture: "low",
+      };
+    }
+  }
+  const candidates = sequenceCandidatesForSlot(visual, slot, group.representative.id, eventName);
   const sequence = candidates.length ? candidates[ordinal % candidates.length] : null;
   if (!sequence) {
     return {
       event: "preview",
       frames: [entityPreviewUrl(sourceId, group.representative.id, 5)],
       intervalMs: CONFIG.visual.frameIntervalMs,
+      posture: "normal",
     };
   }
-  const pairedShadow = visual.sourceFrameCount === visual.contentFrameCount * 2;
-  const shadowOffset = pairedShadow ? visual.contentFrameCount : 0;
-  const facingOffset = sequence.facing_step
-    ? 5 * sequence.facing_step
-    : 0;
-  const frames = Array.from({ length: Math.min(24, Math.max(1, Number(sequence.frame_count) || 1)) }, (_, index) => {
-    const frame = Number(sequence.start_frame || 0)
-      + facingOffset
-      + index * Math.max(1, Number(sequence.frame_step || 1));
-    const shadowFrame = pairedShadow && frame < shadowOffset && frame + shadowOffset < visual.sourceFrameCount
-      ? frame + shadowOffset
-      : undefined;
-    return assetPreviewUrl(sequence.assetId, frame, shadowFrame, 12, { paletteKind: sequence.palette || "unit" });
-  });
   return {
     event: sequence.event,
-    frames,
+    frames: sequenceFrames(visual, sequence),
     intervalMs: Number(sequence.rate_ms) > 0 ? Number(sequence.rate_ms) : CONFIG.visual.frameIntervalMs,
+    posture: animationPosture(sequence.event),
   };
 }
 
@@ -184,16 +212,20 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
     }
     const ordinalBySlot = new Map();
     const cues = group.cues.map((cue) => {
-      const event = cue.events[0] || {};
+      const event = cue.primaryEvent || chooseCueEvent(cue, group.representative.id);
       const slot = event.slot || "select";
       const ordinal = ordinalBySlot.get(slot) || 0;
       ordinalBySlot.set(slot, ordinal + 1);
+      const animation = sequenceAnimation(group, slot, sourceId, ordinal, event.event);
+      if (!animationMatchesSlot(slot, animation.event)) {
+        throw new Error(`${group.representative.name}/${cue.assetName} 的 ${slot} 事件错误匹配到 ${animation.event}`);
+      }
       return {
         ...cue,
         slot,
-        eventLabel: EVENT_LABELS[slot] || "单位回应",
+        eventLabel: eventLabel(event),
         eventName: event.event || "",
-        animation: sequenceAnimation(group, slot, sourceId, ordinal),
+        animation,
       };
     });
     return {
@@ -216,14 +248,28 @@ function validateDescriptionMarkers(groups) {
     for (const cue of group.cues) {
       const translation = cue.translated || cue.localized || "";
       const originalHasCue = /<[^<>]+>/.test(cue.original || "");
-      if (!cue.original && !/^<[^<>]+>$/.test(translation)) {
-        throw new Error(`${cue.assetName} 的无原文音效没有保留尖括号：${translation}`);
+      if (!cue.original) {
+        throw new Error(`${cue.assetName} 缺少原文或英文音效描述`);
       }
       if (originalHasCue && !/<[^<>]+>/.test(translation)) {
         throw new Error(`${cue.assetName} 的译文没有保留原文提示尖括号：${translation}`);
       }
     }
   }
+}
+
+function smokeSelection(groups) {
+  const extraSlots = {
+    E2: ["weapon", "feedback", "die"],
+    LUNR: ["move", "weapon", "feedback", "die"],
+    DOG: ["weapon", "feedback", "die"],
+    DESO: ["weapon", "die"],
+  };
+  return groups.map((group) => {
+    const slots = [group.cues[0]?.slot, ...(extraSlots[group.representative.id] || [])].filter(Boolean);
+    const cues = slots.map((slot) => group.cues.find((cue) => cue.slot === slot)).filter(Boolean);
+    return { ...group, cues: [...new Map(cues.map((cue) => [cue.assetId, cue])).values()] };
+  });
 }
 
 async function findCameoPaletteId(sourceId) {
@@ -272,13 +318,13 @@ function presentationHtml() {
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
     .shell{display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:16px 24px 8px;overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current strong{max-width:100%;overflow:hidden;color:#ef625c;font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
-    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;inset:8px 38px 0;display:grid;place-items:center}.subject{width:100%;height:100%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transform:translateY(180px) scale(1.46);transform-origin:center;transition:opacity .2s ease}.voice-head{position:absolute;right:38px;top:76px;z-index:2;display:flex;align-items:center;justify-content:flex-end}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:32px;font-weight:680;letter-spacing:.04em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
-    .voice{display:grid;overflow:hidden;padding:0 42px 18px;transition:opacity .2s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;max-width:980px;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{color:#ffb0aa;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0}.localized{color:#ef625c;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
+    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;inset:8px 0 18px;display:grid;place-items:center}.subject{width:100%;height:100%;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity .28s ease}.voice-head{position:absolute;left:calc(50% + 160px);top:220px;z-index:2;display:flex;align-items:center;justify-content:flex-start;transition:opacity .28s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
+    .voice{display:grid;overflow:hidden;padding:0 42px 18px;transition:opacity .28s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
-    .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:900px;padding:56px 44px;text-align:center}.transition-card small{display:block;color:#e96a64;font-size:23px;font-weight:700;letter-spacing:.08em}.transition-card small:empty{display:none}.transition-card h2{margin:28px 0 0;font-size:62px;line-height:1.22;text-shadow:0 14px 42px rgba(0,0,0,.48)}.transition-card p{display:none}.transition-card .site{margin-top:42px;color:#858e9a;font-family:"Segoe UI",sans-serif;font-size:22px}
-    .changing .unit-track,.changing .subject,.changing .voice{opacity:0}.unit-track{transition:opacity .2s ease}
-  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><img class="subject" alt="单位动画"></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
-    window.__voiceTimer=0;window.__setFrames=(frames,interval)=>{clearInterval(window.__voiceTimer);const image=document.querySelector('.subject');let index=0;const apply=()=>{image.src=frames[index]||''};apply();if(frames.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%frames.length;apply()},Math.max(70,interval||110))};
+    .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:38px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:88px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:32px;font-weight:600}
+    .unit-track{transition:opacity .28s ease,transform .34s cubic-bezier(.22,.7,.22,1);will-change:opacity,transform}.unit-leaving .unit-track{opacity:0;transform:translateX(-82px) scale(.985)}.unit-entering .unit-track{opacity:0;transform:translateX(82px) scale(.985)}.unit-leaving .subject,.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .subject,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
+  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><canvas class="subject" width="1000" height="850" aria-label="单位动画"></canvas></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
+    window.__voiceTimer=0;window.__voiceFrames={};window.__voiceLayouts={};window.__setFrames=(frames,interval,posture,unitId)=>{clearInterval(window.__voiceTimer);const canvas=document.querySelector('.subject');const context=canvas.getContext('2d');context.imageSmoothingEnabled=false;const layout=window.__voiceLayouts[unitId]||{scale:1};const sequence=frames.map(src=>window.__voiceFrames[src]).filter(Boolean);const widest=Math.max(1,...sequence.map(frame=>frame.bounds.width));const tallest=Math.max(1,...sequence.map(frame=>frame.bounds.height));const scale=Math.min(layout.scale,900/widest,720/tallest);let index=0;const apply=()=>{context.clearRect(0,0,canvas.width,canvas.height);const frame=sequence[index];if(frame){const bounds=frame.bounds;const baseline=posture==='low'?700:742;const center=(bounds.left+bounds.right)/2;context.drawImage(frame.image,canvas.width/2-center*scale,baseline-bounds.bottom*scale,frame.image.naturalWidth*scale,frame.image.naturalHeight*scale)}};apply();if(sequence.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%sequence.length;apply()},Math.max(70,interval||110))};window.__fitOriginal=()=>{const text=document.querySelector('.original');const base=66;const limit=window.innerWidth*.8;text.style.fontSize=base+'px';const width=text.getBoundingClientRect().width;if(width>limit)text.style.fontSize=Math.max(28,base*limit/width)+'px'};
   </script></body></html>`;
 }
 
@@ -297,14 +343,85 @@ async function installPresentation(page, kind, groups) {
     group.cameoUrl,
     ...group.cues.flatMap((cue) => cue.animation.frames),
   ]).filter(Boolean))];
-  await page.evaluate(async (values) => {
+  const frameGroups = groups.map((group) => ({
+    unitId: group.representative.id,
+    referenceFrames: group.cues[0]?.animation.frames || [],
+  }));
+  const frameUrls = [...new Set(groups.flatMap((group) => group.cues.flatMap((cue) => cue.animation.frames)))];
+  const visualLayouts = await page.evaluate(async ({ values, frameGroups, frameUrls }) => {
+    const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
       const image = new Image();
-      image.onload = () => image.decode().catch(() => undefined).finally(resolve);
+      image.onload = () => image.decode().catch(() => undefined).finally(() => {
+        records[src] = { image };
+        resolve();
+      });
       image.onerror = () => reject(new Error(`浏览器预载失败：${src}`));
       image.src = src;
     })));
-  }, urls);
+    const scratch = document.createElement("canvas");
+    const context = scratch.getContext("2d", { willReadFrequently: true });
+    const measured = new Map();
+    const boundsFor = (src) => {
+      if (measured.has(src)) return measured.get(src);
+      const image = records[src]?.image;
+      if (!image) return null;
+      scratch.width = image.naturalWidth;
+      scratch.height = image.naturalHeight;
+      context.clearRect(0, 0, scratch.width, scratch.height);
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, scratch.width, scratch.height).data;
+      let left = scratch.width;
+      let top = scratch.height;
+      let right = -1;
+      let bottom = -1;
+      for (let y = 0; y < scratch.height; y += 2) {
+        for (let x = 0; x < scratch.width; x += 2) {
+          const offset = (y * scratch.width + x) * 4;
+          const alpha = pixels[offset + 3];
+          const brightness = pixels[offset] + pixels[offset + 1] + pixels[offset + 2];
+          if (alpha < 40 || brightness < 36) continue;
+          left = Math.min(left, x);
+          top = Math.min(top, y);
+          right = Math.max(right, x);
+          bottom = Math.max(bottom, y);
+        }
+      }
+      const bounds = right >= left
+        ? { left, top, right: right + 1, bottom: bottom + 1, width: right - left + 1, height: bottom - top + 1 }
+        : { left: 0, top: 0, right: image.naturalWidth, bottom: image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
+      records[src].bounds = bounds;
+      measured.set(src, bounds);
+      return bounds;
+    };
+    const median = (values) => {
+      const sorted = [...values].sort((left, right) => left - right);
+      return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 1;
+    };
+    for (const src of frameUrls) boundsFor(src);
+    const layouts = {};
+    for (const group of frameGroups) {
+      const selected = [
+        group.referenceFrames[0],
+        group.referenceFrames[Math.floor(group.referenceFrames.length / 2)],
+        group.referenceFrames.at(-1),
+      ].filter(Boolean);
+      const references = [...new Set(selected)]
+        .map((src) => ({ src, bounds: boundsFor(src) }))
+        .filter((sample) => sample.bounds);
+      const referenceHeight = median(references.map((sample) => sample.bounds.height));
+      layouts[group.unitId] = {
+        scale: Math.min(3.4, 640 / referenceHeight),
+        anchorX: median(references.map((sample) => (sample.bounds.left + sample.bounds.right) / 2)),
+        anchorY: median(references.map((sample) => sample.bounds.bottom)),
+        referenceHeight,
+      };
+    }
+    window.__voiceFrames = records;
+    window.__voiceLayouts = layouts;
+    return layouts;
+  }, { values: urls, frameGroups, frameUrls });
+  console.log(`[visual] 单位归一化 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x`).join(" ")}`);
   const audioAssets = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
     cue.assetId,
     mediaUrl(cue.assetId),
@@ -342,8 +459,11 @@ async function showTransition(page, eyebrow, title, detail, durationSeconds) {
 }
 
 async function showUnit(page, groups, groupIndex) {
-  await page.evaluate(() => document.body.classList.add("changing"));
-  await page.waitForTimeout(210);
+  await page.evaluate(() => {
+    document.body.classList.remove("unit-entering");
+    document.body.classList.add("unit-leaving");
+  });
+  await page.waitForTimeout(180);
   const group = groups[groupIndex];
   const previousGroup = groups[groupIndex - 1];
   const nextGroup = groups[groupIndex + 1];
@@ -362,30 +482,36 @@ async function showUnit(page, groups, groupIndex) {
     document.querySelector(".unit-current img").src = group.cameoUrl || "";
     document.querySelector(".unit-current img").style.visibility = group.cameoUrl ? "visible" : "hidden";
     const animation = group.cues[0]?.animation || { frames: [], intervalMs: 110 };
-    window.__setFrames(animation.frames, animation.intervalMs);
+    window.__setFrames(animation.frames, animation.intervalMs, animation.posture, group.representative.id);
     document.querySelector(".event b").textContent = "";
     document.querySelector(".original").textContent = "";
+    window.__fitOriginal();
     document.querySelector(".localized").textContent = "";
     document.querySelector(".original-block").classList.add("hidden");
     document.querySelector(".localized-block").classList.add("hidden");
-    document.body.classList.remove("changing");
+    document.body.classList.remove("unit-leaving");
+    document.body.classList.add("unit-entering");
   }, { group, previous, next });
-  await page.waitForTimeout(CONFIG.visual.unitIntroSeconds * 1000);
+  await page.waitForTimeout(34);
+  await page.evaluate(() => document.body.classList.remove("unit-entering"));
+  await page.waitForTimeout(Math.max(0, CONFIG.visual.unitIntroSeconds * 1000 - 214));
 }
 
 async function showCue(page, group, cue, cueIndex, segmentCueIndex, totalCues) {
-  await page.evaluate(({ cue, segmentCueIndex, totalCues }) => {
+  await page.evaluate(({ cue, unitId, segmentCueIndex, totalCues }) => {
     const original = cue.original || cue.translated || cue.localized || cue.assetName || "";
     const chinese = cue.translated || cue.localized || "";
     document.querySelector(".event b").textContent = cue.eventLabel;
     document.querySelector(".original").textContent = original;
+    window.__fitOriginal();
     document.querySelector(".localized").textContent = chinese;
     document.querySelector(".original-block").classList.toggle("hidden", !original);
     document.querySelector(".localized-block").classList.toggle("hidden", !chinese || chinese === original);
     document.querySelector(".progress b").style.width = `${((segmentCueIndex + 1) / totalCues) * 100}%`;
-    window.__setFrames(cue.animation.frames, cue.animation.intervalMs);
+    window.__setFrames(cue.animation.frames, cue.animation.intervalMs, cue.animation.posture, unitId);
   }, {
     cue,
+    unitId: group.representative.id,
     segmentCueIndex,
     totalCues,
   });
@@ -696,7 +822,7 @@ async function main() {
   const selectedGroups = Object.fromEntries(kinds.map((kind) => {
     const groups = prepareGroups(plan.groups.filter((group) => group.kind === kind), plan.source.id, cameoPaletteId);
     validateDescriptionMarkers(groups);
-    return [kind, SMOKE ? groups.slice(0, 2).map((group) => ({ ...group, cues: group.cues.slice(0, 1) })) : groups];
+    return [kind, SMOKE ? smokeSelection(groups) : groups];
   }));
   for (const kind of kinds) {
     if (!selectedGroups[kind].length) throw new Error(`${kind} 没有可录制的单位声音`);

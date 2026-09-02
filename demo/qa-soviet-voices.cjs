@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { SLOT_ORDER, animationMatchesSlot } = require("./voice-event-semantics.cjs");
 
 const ROOT = path.resolve(__dirname);
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "voice-video.config.json"), "utf8"));
@@ -53,16 +54,26 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: CABLE 输出路由生效`, segment.cableRouting?.sinkIdApplied === true && /CABLE Input/i.test(segment.cableRouting?.outputLabel || ""), segment.cableRouting);
   check(`${segment.id}: CABLE 延迟在合理范围`, Number(segment.cableCaptureLatency) >= 0 && Number(segment.cableCaptureLatency) < 1.5, segment.cableCaptureLatency);
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
+  for (const group of segment.groups || []) {
+    const groupCues = (segment.audioCues || []).filter((cue) => cue.unitId === group.id);
+    const slotOrder = groupCues.map((cue) => SLOT_ORDER.get(cue.slot) ?? 50);
+    check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
+  }
   for (const cue of segment.audioCues || []) {
     const translation = cue.translated || cue.localized || "";
     const originalHasCue = /<[^<>]+>/.test(cue.original || "");
     check(`${segment.id}/${cue.assetId}: 含可展示文本`, Boolean(cue.original || cue.translated || cue.localized), { original: cue.original, translated: cue.translated, localized: cue.localized });
+    check(`${segment.id}/${cue.assetId}: 原文或英文音效描述完整`, Boolean(cue.original), cue.original);
     check(`${segment.id}/${cue.assetId}: 含中文译文或原生中文`, Boolean(cue.translated || cue.localized), { translated: cue.translated, localized: cue.localized });
     if (!cue.original) {
       check(`${segment.id}/${cue.assetId}: 无原文音效保留尖括号`, /^<[^<>]+>$/.test(translation), translation);
     } else if (originalHasCue) {
       check(`${segment.id}/${cue.assetId}: 译文保留原文提示尖括号`, /<[^<>]+>/.test(translation), { original: cue.original, translation });
     }
+    check(`${segment.id}/${cue.assetId}: 主体动作匹配声音事件`, animationMatchesSlot(cue.slot, cue.animationEvent), {
+      slot: cue.slot,
+      animationEvent: cue.animationEvent,
+    });
     check(`${segment.id}/${cue.assetId}: 时长有效`, Number(cue.duration) > 0, cue.duration);
   }
   const rawPath = path.join(RUN_DIR, segment.rawVideo);
@@ -76,8 +87,12 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: 原始画面为 30 fps`, video?.r_frame_rate === "30/1", video?.r_frame_rate);
   check(`${segment.id}: 帧时钟与媒体时长一致`, Math.abs(duration - Number(segment.capture?.duration || 0)) < 0.08, { media: duration, frameClock: segment.capture?.duration });
 }
-const expectedGroups = showcase.smoke ? 2 : 9;
-const expectedCues = showcase.smoke ? 2 : 168;
+const expectedGroups = showcase.smoke
+  ? showcase.segments.reduce((total, segment) => total + Number(segment.groups?.length || 0), 0)
+  : showcase.planSummary.sharedVoiceGroups;
+const expectedCues = showcase.smoke
+  ? showcase.segments.reduce((total, segment) => total + Number(segment.expectedCueCount || 0), 0)
+  : showcase.planSummary.presentations;
 check(`覆盖 ${expectedGroups} 个苏军步兵组`, groupCount === expectedGroups, groupCount);
 check(`覆盖 ${expectedCues} 条单位声音`, cueCount === expectedCues, cueCount);
 
