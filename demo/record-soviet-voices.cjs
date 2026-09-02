@@ -77,8 +77,18 @@ function sequenceMatches(sequence, expression) {
   return [sequence.event, ...(sequence.aliases || [])].some((value) => expression.test(String(value)));
 }
 
+function validSequence(visual, sequence) {
+  const pairedShadow = visual.sourceFrameCount === visual.contentFrameCount * 2;
+  const limit = pairedShadow ? visual.contentFrameCount : visual.sourceFrameCount;
+  const facingOffset = sequence.facing_step ? 5 * Number(sequence.facing_step) : 0;
+  const lastFrame = Number(sequence.start_frame || 0)
+    + facingOffset
+    + (Math.max(1, Number(sequence.frame_count) || 1) - 1) * Math.max(1, Number(sequence.frame_step || 1));
+  return lastFrame >= 0 && lastFrame < limit;
+}
+
 function sequenceForSlot(visual, slot) {
-  const sequences = visual.sequences || [];
+  const sequences = (visual.sequences || []).filter((sequence) => validSequence(visual, sequence));
   const preferences = {
     attack: [/fireup|fireprone|fire|attack|shoot/i, /walk|ready|guard/i],
     move: [/walk|fly|swim|crawl|move/i, /idle|ready|guard/i],
@@ -110,7 +120,10 @@ function sequenceUrls(group, slot, sourceId) {
     const frame = Number(sequence.start_frame || 0)
       + facingOffset
       + index * Math.max(1, Number(sequence.frame_step || 1));
-    return assetPreviewUrl(sequence.assetId, frame, pairedShadow ? frame + shadowOffset : undefined);
+    const shadowFrame = pairedShadow && frame < shadowOffset && frame + shadowOffset < visual.sourceFrameCount
+      ? frame + shadowOffset
+      : undefined;
+    return assetPreviewUrl(sequence.assetId, frame, shadowFrame);
   });
 }
 
