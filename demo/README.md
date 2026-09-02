@@ -2,6 +2,8 @@
 
 这个目录只保存可复用的录制、旁白、合成和验收代码。生成的 WAV、MKV、MP4、截图、运行目录、IndexTTS 权重和音色参考均由 `.gitignore` 排除，不进入 Git 历史，也不参与 RA2 Explorer 的普通构建与 Release。
 
+演示工具只在 `demo-video` 分支维护。该分支定期合并 `master` 的产品更新，但演示代码不会反向进入 `master`，也不会增加普通用户和其他开发者的项目负担。
+
 ## 环境
 
 - Windows 10/11、Node.js 18+、Python 3.11；
@@ -16,7 +18,7 @@
 
 ```bat
 cd demo
-npm install
+npm ci
 npm run audio:verify
 npm run record -- http://127.0.0.1:46120/
 ```
@@ -47,10 +49,42 @@ X:\IndexTTS2\.venv\Scripts\python.exe generate_showcase_narration.py ^
 ## 合成与验收
 
 ```bat
-node render-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS v0.12.3
-node qa-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS showcase-YYYY-MM-DDTHH-MM-SS\final\RA2-Explorer-Complete-Showcase-v0.12.3.mp4
+node render-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS v0.13.1
+node qa-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS showcase-YYYY-MM-DDTHH-MM-SS\final\RA2-Explorer-Complete-Showcase-v0.13.1.mp4
 ```
 
 合成器按配置统一收紧演示节奏，输出 H.264 2560×1440、30 fps 和 AAC 48 kHz 双声道，并写入七个章节标记。QA 会检查七章齐全、页面与网络错误、源分辨率、CABLE 路由与延迟、旁白重叠、游戏声音数量、演示节奏、最终编码、章节和总时长，并生成被忽略的 `qa-report.json`。
 
 `assemble-showcase.cjs` 只用于从多次局部录制中选择每章最新的无错误片段；完整录制成功时直接使用原运行目录即可。
+
+## 苏军单位语音全览
+
+专用流水线遍历规则中属于苏军的步兵和载具，只保留具有可读台词的 `voice` 关联。警犬吼叫等非台词声音、未使用的规则实体会被排除；多个单位使用完全相同的语音集合时只播放一次，并在画面中列出共享单位。每条语音同时展示单位小图、主体动作、游戏事件、英文原文及已有中文文本。
+
+先生成并检查清单：
+
+```bat
+npm run voices:plan -- http://127.0.0.1:46120/
+```
+
+录制前应确认本地服务已经完成实际游戏资源索引，并验证 CABLE 路由。完整录制会先生成所需预览帧，再将本段音频载入浏览器内存，以避免首次播放停顿：
+
+```bat
+npm run audio:verify
+npm run voices:record -- http://127.0.0.1:46120/ all
+```
+
+可用 `infantry` 或 `vehicle` 代替 `all`，只录其中一段。开发时可追加 `--smoke`，每段仅取第一个单位的前两条语音：
+
+```bat
+npm run voices:record -- http://127.0.0.1:46120/ all --smoke
+```
+
+录制完成后，命令会输出运行目录。使用该目录名完成合成与验收：
+
+```bat
+npm run voices:render -- soviet-voices-YYYY-MM-DDTHH-MM-SS v0.13.1
+npm run voices:qa -- soviet-voices-YYYY-MM-DDTHH-MM-SS
+```
+
+合成器会分别输出步兵版、载具版以及两段合并版。合并版带有逐单位章节；三份视频均为 H.264 2560×1440、30 fps 和 AAC 48 kHz 双声道。验收覆盖计划语音完整性、页面与网络错误、CABLE 路由和时延、源分辨率、帧时钟、字幕数据、最终编码及章节数量。
