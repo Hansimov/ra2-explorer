@@ -39,6 +39,7 @@ function check(name, condition, details) {
 let cueCount = 0;
 let groupCount = 0;
 let rawDuration = 0;
+check("仅包含苏军步兵片段", showcase.segments?.length === 1 && showcase.segments[0]?.id === "infantry", (showcase.segments || []).map((segment) => segment.id));
 for (const segment of showcase.segments || []) {
   cueCount += segment.audioCues?.length || 0;
   groupCount += segment.groups?.length || 0;
@@ -52,7 +53,8 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: CABLE 延迟在合理范围`, Number(segment.cableCaptureLatency) >= 0 && Number(segment.cableCaptureLatency) < 1.5, segment.cableCaptureLatency);
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
   for (const cue of segment.audioCues || []) {
-    check(`${segment.id}/${cue.assetId}: 含可展示台词`, Boolean(cue.original || cue.localized), { original: cue.original, localized: cue.localized });
+    check(`${segment.id}/${cue.assetId}: 含可展示文本`, Boolean(cue.original || cue.translated || cue.localized), { original: cue.original, translated: cue.translated, localized: cue.localized });
+    check(`${segment.id}/${cue.assetId}: 含中文译文或原生中文`, Boolean(cue.translated || cue.localized), { translated: cue.translated, localized: cue.localized });
     check(`${segment.id}/${cue.assetId}: 时长有效`, Number(cue.duration) > 0, cue.duration);
   }
   const rawPath = path.join(RUN_DIR, segment.rawVideo);
@@ -60,15 +62,17 @@ for (const segment of showcase.segments || []) {
   const video = rawProbe.streams.find((stream) => stream.codec_type === "video");
   const duration = Number(rawProbe.format.duration);
   rawDuration += duration;
-  check(`${segment.id}: 原始画面为 2560×1440`, video?.width === 2560 && video?.height === 1440, { width: video?.width, height: video?.height });
+  check(`${segment.id}: 原始画面为 ${CONFIG.output.width}×${CONFIG.output.height}`, video?.width === CONFIG.output.width && video?.height === CONFIG.output.height, { width: video?.width, height: video?.height });
   check(`${segment.id}: 原始画面为 30 fps`, video?.r_frame_rate === "30/1", video?.r_frame_rate);
   check(`${segment.id}: 帧时钟与媒体时长一致`, Math.abs(duration - Number(segment.capture?.duration || 0)) < 0.08, { media: duration, frameClock: segment.capture?.duration });
 }
+check("覆盖 9 个苏军步兵组", groupCount === 9, groupCount);
+check("覆盖 168 条单位声音", cueCount === 168, cueCount);
 
 const finalProbe = probe(FINAL_VIDEO, true);
 const finalVideo = finalProbe.streams.find((stream) => stream.codec_type === "video");
 const finalAudio = finalProbe.streams.find((stream) => stream.codec_type === "audio");
-check("最终视频为 H.264 2560×1440", finalVideo?.codec_name === "h264" && finalVideo?.width === CONFIG.output.width && finalVideo?.height === CONFIG.output.height, finalVideo);
+check(`最终视频为 H.264 ${CONFIG.output.width}×${CONFIG.output.height}`, finalVideo?.codec_name === "h264" && finalVideo?.width === CONFIG.output.width && finalVideo?.height === CONFIG.output.height, finalVideo);
 check("最终视频为 30 fps", finalVideo?.r_frame_rate === `${CONFIG.output.frameRate}/1`, finalVideo?.r_frame_rate);
 check("最终音频为 AAC 48 kHz 双声道", finalAudio?.codec_name === "aac" && finalAudio?.sample_rate === "48000" && finalAudio?.channels === 2, finalAudio);
 check("单位章节数正确", finalProbe.chapters?.length === groupCount, { expected: groupCount, actual: finalProbe.chapters?.length });

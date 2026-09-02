@@ -3,13 +3,13 @@
   "appVersion": "0.13.1",
   "pagesUrl": "https://hansimov.github.io/ra2-explorer/",
   "viewport": {
-    "width": 1920,
-    "height": 1080,
-    "deviceScaleFactor": 1.3333333333333333
+    "width": 1080,
+    "height": 1920,
+    "deviceScaleFactor": 1
   },
   "output": {
-    "width": 2560,
-    "height": 1440,
+    "width": 1080,
+    "height": 1920,
     "frameRate": 30,
     "videoCrf": 15,
     "audioBitrate": "192k"
@@ -17,17 +17,17 @@
   "audio": {
     "outputDevice": "CABLE Input (VB-Audio Virtual Cable)",
     "captureDevice": "CABLE Output (VB-Audio Virtual Cable)",
-    "cueLeadSeconds": 0.28,
-    "cueGapSeconds": 0.22,
-    "presentationDelaySeconds": 0.18
+    "cueLeadSeconds": 0.24,
+    "cueGapSeconds": 0.12,
+    "presentationDelaySeconds": 0.2
   },
   "visual": {
     "playerColor": "red",
     "previewAngle": 1,
-    "frameIntervalMs": 120,
+    "frameIntervalMs": 110,
     "voxelFacingIntervalMs": 520,
-    "unitIntroSeconds": 1.0,
-    "sectionIntroSeconds": 2.3,
-    "sectionOutroSeconds": 1.4
+    "unitIntroSeconds": 0.45,
+    "sectionIntroSeconds": 3.0,
+    "sectionOutroSeconds": 0.55
   }
 }

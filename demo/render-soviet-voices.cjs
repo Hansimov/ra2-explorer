@@ -12,7 +12,7 @@ const OUTPUT_TAG = process.argv[3] || process.env.RA2EXP_DEMO_TAG || `v${CONFIG.
 const manifest = JSON.parse(fs.readFileSync(path.join(RUN_DIR, "recording-manifest.json"), "utf8"));
 const CLIP_DIR = path.join(RUN_DIR, "clips");
 const FINAL_DIR = path.join(RUN_DIR, "final");
-const SECTION_NAMES = { infantry: "Soviet-Infantry-Voices", vehicle: "Soviet-Vehicle-Voices" };
+const SECTION_NAMES = { infantry: "Soviet-Infantry-Voices" };
 for (const directory of [CLIP_DIR, FINAL_DIR]) fs.mkdirSync(directory, { recursive: true });
 
 function run(executable, args) {
@@ -86,7 +86,7 @@ fs.writeFileSync(
   renderedSegments.map((segment) => `file '${path.join(RUN_DIR, segment.clip).replaceAll("\\", "/").replaceAll("'", "'\\''")}'`).join("\n"),
   "utf8",
 );
-const noChapters = path.join(FINAL_DIR, "RA2-Explorer-Soviet-Unit-Voices-nochapters.mp4");
+const noChapters = path.join(FINAL_DIR, "RA2-Explorer-Soviet-Infantry-Voices-nochapters.mp4");
 run("ffmpeg.exe", [
   "-hide_banner", "-loglevel", "warning", "-y",
   "-f", "concat", "-safe", "0", "-i", concatPath,
@@ -94,7 +94,7 @@ run("ffmpeg.exe", [
 ]);
 
 const chapterPath = path.join(RUN_DIR, "soviet-voices-chapters.ffmeta");
-const chapterLines = [";FFMETADATA1", "title=RA2 Explorer 苏军单位语音全览"];
+const chapterLines = [";FFMETADATA1", "title=RA2 Explorer 苏军步兵单位语音全览"];
 for (const segment of renderedSegments) {
   const chapters = segment.groupChapters || [];
   chapters.forEach((chapter, index) => {
@@ -110,7 +110,7 @@ for (const segment of renderedSegments) {
 }
 fs.writeFileSync(chapterPath, chapterLines.join("\n"), "utf8");
 
-const finalPath = path.join(FINAL_DIR, `RA2-Explorer-Soviet-Unit-Voices-${OUTPUT_TAG}.mp4`);
+const finalPath = path.join(FINAL_DIR, `RA2-Explorer-Soviet-Infantry-Voices-${OUTPUT_TAG}.mp4`);
 run("ffmpeg.exe", [
   "-hide_banner", "-loglevel", "warning", "-y",
   "-i", noChapters, "-i", chapterPath,
