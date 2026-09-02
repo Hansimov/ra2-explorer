@@ -56,13 +56,16 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
   const ivanLayout = segment.visualLayouts?.IVAN;
   check(`${segment.id}: 使用疯狂伊文主体尺度基准`, ivanLayout?.targetUnit === "IVAN" && ivanLayout?.basis === "height", ivanLayout);
+  const targetSpan = Number(CONFIG.visual.subjectSpan);
   for (const group of segment.groups || []) {
     const groupCues = (segment.audioCues || []).filter((cue) => cue.unitId === group.id);
     const slotOrder = groupCues.map((cue) => SLOT_ORDER.get(cue.slot) ?? 50);
     const layout = segment.visualLayouts?.[group.id];
-    check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Number(layout?.displaySpan) >= 635 && Number(layout?.displaySpan) <= 645, layout);
+    check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Math.abs(Number(layout?.displaySpan) - targetSpan) <= 1, layout);
     check(`${segment.id}/${group.id}: 主体锚点有效`, [layout?.anchorX, layout?.anchorY, layout?.scale].every(Number.isFinite), layout);
     check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, group.id !== "DOG" || layout?.basis === "width", layout);
+    check(`${segment.id}/${group.id}: 透明主体画布可跨入顶部区域`, Number(layout?.headerOverlap) === Number(CONFIG.visual.subjectHeaderOverlap), layout);
+    check(`${segment.id}/${group.id}: 完整源帧上沿不被画布裁切`, Number(layout?.sourceTopAtLowPosture) >= -1, layout);
     check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
   }
   for (const cue of segment.audioCues || []) {
@@ -79,6 +82,11 @@ for (const segment of showcase.segments || []) {
     check(`${segment.id}/${cue.assetId}: 主体动作匹配声音事件`, animationMatchesSlot(cue.slot, cue.animationEvent), {
       slot: cue.slot,
       animationEvent: cue.animationEvent,
+    });
+    check(`${segment.id}/${cue.assetId}: 反馈事件名称遵循 VoiceFeedback 规则字段`, cue.slot !== "feedback" || cue.eventLabel === "受击", {
+      eventName: cue.eventName,
+      expected: "受击",
+      actual: cue.eventLabel,
     });
     check(`${segment.id}/${cue.assetId}: 时长有效`, Number(cue.duration) > 0, cue.duration);
   }

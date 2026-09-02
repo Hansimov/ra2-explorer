@@ -22,6 +22,10 @@ const SOURCE_WIDTH = CONFIG.output.width;
 const SOURCE_HEIGHT = CONFIG.output.height;
 const FPS = CONFIG.output.frameRate;
 const SECTION_LABELS = { infantry: "苏军步兵单位语音" };
+const SUBJECT_HEADER_OVERLAP = Number(CONFIG.visual.subjectHeaderOverlap) || 380;
+const SUBJECT_CANVAS_BASE_HEIGHT = 876;
+const SUBJECT_BASELINE_NORMAL = 765;
+const SUBJECT_BASELINE_LOW = 721;
 
 for (const directory of [RUN_DIR, RAW_DIR, AUDIO_DIR, POSTER_DIR]) {
   fs.mkdirSync(directory, { recursive: true });
@@ -158,6 +162,19 @@ function sequenceFrames(visual, sequence) {
       : undefined;
     return assetPreviewUrl(sequence.assetId, frame, shadowFrame, 8, { paletteKind: sequence.palette || "unit" });
   });
+}
+
+function stableSubjectReferenceFrames(group) {
+  const visual = group.representative.visual;
+  if (visual.bodyFormat === "vxl") {
+    return (group.cues[0]?.animation.frames || []).map(subjectLayerUrl);
+  }
+  const valid = (visual.sequences || []).filter((sequence) => validSequence(visual, sequence));
+  const stable = valid.filter((sequence) => sequenceNamed(sequence, [
+    "idle1", "idle2", "idle", "ready", "guard", "walk", "fly", "swim",
+  ]));
+  const selected = stable.length ? stable : valid.slice(0, 1);
+  return [...new Set(selected.flatMap((sequence) => sequenceFrames(visual, sequence)).map(subjectLayerUrl))];
 }
 
 function animationPosture(event) {
@@ -320,17 +337,21 @@ async function prewarmBackend(groups) {
 }
 
 function presentationHtml() {
+  const subjectCanvasHeight = SUBJECT_CANVAS_BASE_HEIGHT + SUBJECT_HEADER_OVERLAP;
+  const subjectStageTop = 8 - SUBJECT_HEADER_OVERLAP;
+  const normalBaseline = SUBJECT_BASELINE_NORMAL + SUBJECT_HEADER_OVERLAP;
+  const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
     .shell{display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{display:grid;place-items:center;padding:16px 24px 8px;overflow:hidden}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current strong{max-width:100%;overflow:hidden;color:#ef625c;font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
-    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;inset:8px 0 18px;display:grid;place-items:center}.subject{width:100%;height:100%;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity .28s ease}.voice-head{position:absolute;left:calc(50% + 160px);top:220px;z-index:2;display:flex;align-items:center;justify-content:flex-start;transition:opacity .28s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
+    .content{display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:0;left:0;z-index:3;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity .28s ease}.voice-head{position:absolute;left:calc(50% + 160px);top:220px;z-index:4;display:flex;align-items:center;justify-content:flex-start;transition:opacity .28s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52)}.event i{display:none}
     .voice{display:grid;overflow:hidden;padding:0 42px 18px;transition:opacity .28s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
     .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:38px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:88px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:32px;font-weight:600}
     .unit-track{transition:opacity .28s ease,transform .34s cubic-bezier(.22,.7,.22,1);will-change:opacity,transform}.unit-leaving .unit-track{opacity:0;transform:translateX(-82px) scale(.985)}.unit-entering .unit-track{opacity:0;transform:translateX(82px) scale(.985)}.unit-leaving .subject,.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .subject,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
-  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><canvas class="subject" width="1000" height="850" aria-label="单位动画"></canvas></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
-    window.__voiceTimer=0;window.__voiceFrames={};window.__voiceLayouts={};window.__setFrames=(frames,interval,posture,unitId)=>{clearInterval(window.__voiceTimer);const canvas=document.querySelector('.subject');const context=canvas.getContext('2d');context.imageSmoothingEnabled=false;const layout=window.__voiceLayouts[unitId]||{scale:1,anchorX:0,anchorY:0,referenceWidth:1,referenceHeight:1};const sequence=frames.map(src=>window.__voiceFrames[src]).filter(Boolean);const scale=layout.scale;const baseline=posture==='low'?700:742;const drawLeft=canvas.width/2-layout.anchorX*scale;const drawTop=baseline-layout.anchorY*scale;const frameRect=canvas.getBoundingClientRect();const visualRect=document.querySelector('.visual').getBoundingClientRect();const voiceHead=document.querySelector('.voice-head');const bodyRight=canvas.width/2+layout.referenceWidth*scale/2;const bodyTop=baseline-layout.referenceHeight*scale*(posture==='low'?0.58:1);const eventLeft=frameRect.left-visualRect.left+bodyRight*frameRect.width/canvas.width+18;const eventTop=frameRect.top-visualRect.top+bodyTop*frameRect.height/canvas.height+24;voiceHead.style.left=Math.min(visualRect.width-150,Math.max(40,eventLeft))+'px';voiceHead.style.top=Math.min(visualRect.height-80,Math.max(100,eventTop))+'px';let index=0;const apply=()=>{context.clearRect(0,0,canvas.width,canvas.height);const frame=sequence[index];if(frame)context.drawImage(frame.image,drawLeft,drawTop,frame.image.naturalWidth*scale,frame.image.naturalHeight*scale)};apply();if(sequence.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%sequence.length;apply()},Math.max(70,interval||110))};window.__fitOriginal=()=>{const text=document.querySelector('.original');const base=66;const limit=window.innerWidth*.8;text.style.fontSize=base+'px';const width=text.getBoundingClientRect().width;if(width>limit)text.style.fontSize=Math.max(28,base*limit/width)+'px'};
+  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><strong></strong></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><div class="voice-head"><span class="event"><i></i><b></b></span></div></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
+    window.__voiceTimer=0;window.__voiceFrames={};window.__voiceLayouts={};window.__setFrames=(frames,interval,posture,unitId)=>{clearInterval(window.__voiceTimer);const canvas=document.querySelector('.subject');const context=canvas.getContext('2d');context.imageSmoothingEnabled=false;const layout=window.__voiceLayouts[unitId]||{scale:1,anchorX:0,anchorY:0,referenceWidth:1,referenceHeight:1};const sequence=frames.map(src=>window.__voiceFrames[src]).filter(Boolean);const scale=layout.scale;const baseline=posture==='low'?${lowBaseline}:${normalBaseline};const drawLeft=canvas.width/2-layout.anchorX*scale;const drawTop=baseline-layout.anchorY*scale;const frameRect=canvas.getBoundingClientRect();const visualRect=document.querySelector('.visual').getBoundingClientRect();const voiceHead=document.querySelector('.voice-head');const bodyRight=canvas.width/2+layout.referenceWidth*scale/2;const bodyTop=baseline-layout.referenceHeight*scale*(posture==='low'?0.58:1);const eventLeft=frameRect.left-visualRect.left+bodyRight*frameRect.width/canvas.width+18;const eventTop=frameRect.top-visualRect.top+bodyTop*frameRect.height/canvas.height+24;voiceHead.style.left=Math.min(visualRect.width-150,Math.max(40,eventLeft))+'px';voiceHead.style.top=Math.min(visualRect.height-80,Math.max(100,eventTop))+'px';let index=0;const apply=()=>{context.clearRect(0,0,canvas.width,canvas.height);const frame=sequence[index];if(frame)context.drawImage(frame.image,drawLeft,drawTop,frame.image.naturalWidth*scale,frame.image.naturalHeight*scale)};apply();if(sequence.length>1)window.__voiceTimer=setInterval(()=>{index=(index+1)%sequence.length;apply()},Math.max(70,interval||110))};window.__fitOriginal=()=>{const text=document.querySelector('.original');const base=66;const limit=window.innerWidth*.8;text.style.fontSize=base+'px';const width=text.getBoundingClientRect().width;if(width>limit)text.style.fontSize=Math.max(28,base*limit/width)+'px'};
   </script></body></html>`;
 }
 
@@ -347,22 +368,16 @@ async function installPresentation(page, kind, groups) {
 
   const frameGroups = groups.map((group) => ({
     unitId: group.representative.id,
-    referenceFrames: [...new Set(group.cues
-      .filter((cue) => ["select", "move"].includes(cue.slot))
-      .flatMap((cue) => cue.animation.frames)
-      .map(subjectLayerUrl))],
+    referenceFrames: stableSubjectReferenceFrames(group),
   }));
-  for (const group of frameGroups) {
-    if (!group.referenceFrames.length) {
-      group.referenceFrames = groups.find((candidate) => candidate.representative.id === group.unitId)
-        ?.cues[0]?.animation.frames.map(subjectLayerUrl) || [];
-    }
-  }
   const urls = [...new Set(groups.flatMap((group) => [
     group.cameoUrl,
     ...group.cues.flatMap((cue) => cue.animation.frames),
   ]).concat(frameGroups.flatMap((group) => group.referenceFrames)).filter(Boolean))];
-  const visualLayouts = await page.evaluate(async ({ values, frameGroups }) => {
+  const targetSpan = Number(CONFIG.visual.subjectSpan) || 576;
+  const headerOverlap = SUBJECT_HEADER_OVERLAP;
+  const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
+  const visualLayouts = await page.evaluate(async ({ values, frameGroups, targetSpan, headerOverlap, lowBaseline }) => {
     const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
       const image = new Image();
@@ -430,7 +445,6 @@ async function installPresentation(page, kind, groups) {
       };
     });
     const ivan = samples.find((sample) => sample.unitId === "IVAN");
-    const targetSpan = 640;
     const layouts = {};
     for (const sample of samples) {
       const dimension = sample.unitId === "DOG" ? sample.referenceWidth : sample.referenceHeight;
@@ -444,12 +458,14 @@ async function installPresentation(page, kind, groups) {
         displaySpan: dimension * scale,
         basis: sample.unitId === "DOG" ? "width" : "height",
         targetUnit: ivan?.unitId || "IVAN",
+        headerOverlap,
+        sourceTopAtLowPosture: lowBaseline - sample.anchorY * scale,
       };
     }
     window.__voiceFrames = records;
     window.__voiceLayouts = layouts;
     return layouts;
-  }, { values: urls, frameGroups });
+  }, { values: urls, frameGroups, targetSpan, headerOverlap, lowBaseline });
   console.log(`[visual] 以疯狂伊文为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
   const audioAssets = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
     cue.assetId,
@@ -797,6 +813,7 @@ async function recordSection(browser, kind, groups) {
           unitId: group.representative.id,
           unitName: group.representative.name,
           slot: cue.slot,
+          eventName: cue.eventName,
           eventLabel: cue.eventLabel,
           original: cue.original,
           localized: cue.localized,

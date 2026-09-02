@@ -24,6 +24,8 @@
   },
   "visual": {
     "playerColor": "red",
+    "subjectSpan": 576,
+    "subjectHeaderOverlap": 380,
     "previewAngle": 1,
     "frameIntervalMs": 110,
     "voxelFacingIntervalMs": 520,
