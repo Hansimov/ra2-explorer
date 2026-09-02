@@ -15,6 +15,7 @@
     "audioBitrate": "192k"
   },
   "audio": {
+    "timingMode": "natural",
     "outputDevice": "CABLE Input (VB-Audio Virtual Cable)",
     "captureDevice": "CABLE Output (VB-Audio Virtual Cable)",
     "cueLeadSeconds": 0.24,

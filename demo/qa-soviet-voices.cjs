@@ -39,6 +39,7 @@ function check(name, condition, details) {
 let cueCount = 0;
 let groupCount = 0;
 let rawDuration = 0;
+check("使用语音自然时长", CONFIG.audio.timingMode === "natural", CONFIG.audio.timingMode);
 check("仅包含苏军步兵片段", showcase.segments?.length === 1 && showcase.segments[0]?.id === "infantry", (showcase.segments || []).map((segment) => segment.id));
 for (const segment of showcase.segments || []) {
   cueCount += segment.audioCues?.length || 0;
@@ -62,6 +63,8 @@ for (const segment of showcase.segments || []) {
   const video = rawProbe.streams.find((stream) => stream.codec_type === "video");
   const duration = Number(rawProbe.format.duration);
   rawDuration += duration;
+  const lastCueEnd = Math.max(0, ...(segment.audioCues || []).map((cue) => Number(cue.start) + Number(cue.duration)));
+  check(`${segment.id}: 最后一条声音完整保留`, duration >= lastCueEnd, { media: duration, lastCueEnd });
   check(`${segment.id}: 原始画面为 ${CONFIG.output.width}×${CONFIG.output.height}`, video?.width === CONFIG.output.width && video?.height === CONFIG.output.height, { width: video?.width, height: video?.height });
   check(`${segment.id}: 原始画面为 30 fps`, video?.r_frame_rate === "30/1", video?.r_frame_rate);
   check(`${segment.id}: 帧时钟与媒体时长一致`, Math.abs(duration - Number(segment.capture?.duration || 0)) < 0.08, { media: duration, frameClock: segment.capture?.duration });
