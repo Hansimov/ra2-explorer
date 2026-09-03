@@ -1,5 +1,11 @@
 const assert = require("assert");
 const { planAnimationSections, plannedAnimationCount } = require("./voice-animation-planner.cjs");
+const {
+  animationMatchesSlot,
+  chooseCueEvent,
+  eventLabel,
+  soundDescription,
+} = require("./voice-event-semantics.cjs");
 
 const candidate = (sequenceId, posture = "normal", playbackMode = "loop") => ({
   sequenceId,
@@ -49,5 +55,28 @@ const continuous = planAnimationSections([
   getTransition: () => null,
 });
 assert.ok(continuous.every((cue) => cue.animation.runId === continuous[0].animation.runId));
+
+const semanticCue = (eventName, slot = "attack") => ({
+  assetName: `${eventName}.wav`,
+  events: [{ event: eventName, slot }],
+});
+
+assert.equal(chooseCueEvent(semanticCue("SpyAttackCommand"), "SPY").slot, "disguise");
+assert.equal(chooseCueEvent(semanticCue("SpySpecialAttack"), "SPY").slot, "infiltrate");
+assert.equal(chooseCueEvent(semanticCue("DefuseKit"), "ENGINEER").slot, "defuse");
+assert.equal(eventLabel({ slot: "disguise" }), "伪装");
+assert.equal(eventLabel({ slot: "infiltrate" }), "渗透");
+assert.equal(eventLabel({ slot: "defuse" }), "拆弹");
+assert.ok(animationMatchesSlot("disguise", "walk"));
+assert.ok(animationMatchesSlot("infiltrate", "enter"));
+assert.ok(animationMatchesSlot("defuse", "deploy"));
+assert.deepEqual(soundDescription("ChronoLegionAttack", "weapon"), {
+  original: "<Chrono beam>",
+  translated: "<超时空射线声>",
+});
+assert.deepEqual(soundDescription("GuardianGIDeployedAttack", "weapon"), {
+  original: "<Rocket launcher fire>",
+  translated: "<火箭筒开火声>",
+});
 
 console.log("voice animation planner: passed");

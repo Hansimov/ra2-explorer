@@ -5,6 +5,9 @@ const SLOT_ORDER = new Map([
   ["enter", 3],
   ["capture", 4],
   ["deploy", 5],
+  ["disguise", 5.5],
+  ["infiltrate", 5.55],
+  ["defuse", 5.6],
   ["attack", 6],
   ["weapon", 7],
   ["special_attack", 8],
@@ -20,6 +23,9 @@ const SLOT_LABELS = {
   enter: "进入",
   capture: "占领",
   deploy: "部署",
+  disguise: "伪装",
+  infiltrate: "渗透",
+  defuse: "拆弹",
   attack: "攻击",
   weapon: "开火",
   special_attack: "特殊攻击",
@@ -48,6 +54,16 @@ const WEAPON_SOUND_DESCRIPTIONS = new Map([
   ["dogattack", { original: "<Bite>", translated: "<撕咬声>" }],
   ["desolatorattack", { original: "<Radiation beam fire>", translated: "<辐射射线发射声>" }],
   ["desolatordeploy", { original: "<Radiation burst>", translated: "<辐射爆发声>" }],
+  ["chronolegionattack", { original: "<Chrono beam>", translated: "<超时空射线声>" }],
+  ["sealattack", { original: "<Submachine gun fire>", translated: "<冲锋枪开火声>" }],
+  ["sealplacebomb", { original: "<Explosive charge placement>", translated: "<安放炸药声>" }],
+  ["rocketeerattack", { original: "<20 mm cannon fire>", translated: "<20 毫米机炮开火声>" }],
+  ["spyattack", { original: "<Disguise activation>", translated: "<启动伪装声>" }],
+  ["sniperattack", { original: "<Sniper rifle fire>", translated: "<狙击步枪开火声>" }],
+  ["giattack", { original: "<Rifle fire>", translated: "<步枪开火声>" }],
+  ["giattackdeployed", { original: "<Deployed rifle fire>", translated: "<部署姿态步枪开火声>" }],
+  ["tanyaattack", { original: "<Pistol fire>", translated: "<手枪开火声>" }],
+  ["guardiangideployedattack", { original: "<Rocket launcher fire>", translated: "<火箭筒开火声>" }],
 ]);
 
 function inferredSlotFromAssetName(assetName) {
@@ -60,6 +76,9 @@ function preferredSlotForEventName(eventName) {
   if (/created|createvoice/i.test(event)) return "create";
   if (/select/i.test(event)) return "select";
   if (/move/i.test(event)) return "move";
+  if (/spyspecialattack|infiltrat/i.test(event)) return "infiltrate";
+  if (/spyattack|disguise/i.test(event)) return "disguise";
+  if (/defusekit|defus/i.test(event)) return "defuse";
   if (/attack/i.test(event)) return "attack";
   if (/fear|feedback/i.test(event)) return "feedback";
   if (/die|death/i.test(event)) return "die";
@@ -71,6 +90,11 @@ function preferredSlotForEventName(eventName) {
 function chooseCueEvent(cue, unitId = "") {
   const events = Array.isArray(cue?.events) ? cue.events : [];
   if (!events.length) return { slot: "select", event: "", source: unitId };
+
+  const specialized = events.find((event) => ["disguise", "infiltrate", "defuse"].includes(
+    preferredSlotForEventName(event.event),
+  ));
+  if (specialized) return { ...specialized, slot: preferredSlotForEventName(specialized.event) };
 
   const inferred = inferredSlotFromAssetName(cue.assetName);
   if (inferred === "attack" && /engineer/i.test(unitId)) {
@@ -102,9 +126,10 @@ function eventLabel(event) {
 }
 
 function soundDescription(eventName, slot) {
+  const defined = WEAPON_SOUND_DESCRIPTIONS.get(String(eventName || "").toLowerCase());
+  if (defined) return defined;
   if (slot === "weapon") {
-    return WEAPON_SOUND_DESCRIPTIONS.get(String(eventName || "").toLowerCase())
-      || { original: "<Weapon sound>", translated: "<武器声>" };
+    return { original: "<Weapon sound>", translated: "<武器声>" };
   }
   if (slot === "die") return { original: "<Death cry>", translated: "<阵亡声>" };
   return { original: "", translated: "" };
@@ -151,6 +176,9 @@ function animationMatchesSlot(slot, animationEvent) {
     enter: /walk|enter/i,
     capture: /walk|capture|deploy/i,
     deploy: /deploy|crawl|idle/i,
+    disguise: /walk|idle|ready|guard/i,
+    infiltrate: /walk|enter|idle|ready|guard/i,
+    defuse: /deploy|walk|capture|idle/i,
     harvest: /work|harvest|walk/i,
     attack: /fire|attack|shoot|deploy/i,
     weapon: /fire|attack|shoot|deploy/i,

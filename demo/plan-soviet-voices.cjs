@@ -6,9 +6,13 @@ const {
   chooseCueEvent,
   soundDescription,
 } = require("./voice-event-semantics.cjs");
+const { profileKeyFromArguments, voiceVideoProfile } = require("./voice-video-profiles.cjs");
 
-const BASE_URL = (process.argv[2] || "http://127.0.0.1:46120/").replace(/\/+$/, "");
-const OUTPUT = path.resolve(process.argv[3] || path.join(__dirname, "soviet-voices-plan.json"));
+const arguments_ = process.argv.slice(2);
+const PROFILE = voiceVideoProfile(profileKeyFromArguments(arguments_));
+const positional = arguments_.filter((value) => !value.startsWith("--"));
+const BASE_URL = (positional[0] || "http://127.0.0.1:46120/").replace(/\/+$/, "");
+const OUTPUT = path.resolve(positional[1] || path.join(__dirname, `${PROFILE.filePrefix}-plan.json`));
 const SOURCE_ID = process.env.RA2EXP_SOURCE_ID || "";
 const KINDS = ["infantry"];
 const VOCAL_SLOTS = new Set([
@@ -22,17 +26,9 @@ const USAGE_ORDER = new Map([
   ["scenario", 2],
   ["civilian", 3],
 ]);
-const INFANTRY_PRESENTATION_ORDER = new Map([
-  ["e2", 0],
-  ["sengineer", 1],
-  ["terror", 2],
-  ["shk", 3],
-  ["ivan", 4],
-  ["deso", 5],
-  ["boris", 6],
-  ["lunr", 7],
-  ["dog", 8],
-]);
+const INFANTRY_PRESENTATION_ORDER = new Map(
+  PROFILE.presentationOrder.map((unitId, index) => [unitId.toLowerCase(), index]),
+);
 
 async function fetchJson(route) {
   const response = await fetch(`${BASE_URL}${route}`);
@@ -115,7 +111,10 @@ function voiceCues(entity) {
     if (association.kind !== "voice" && !VOCAL_SLOTS.has(association.slot) && !weaponSound) continue;
     for (const sample of association.samples || []) {
       if (!sample.asset) continue;
-      const semanticSlot = weaponSound ? "weapon" : compactText(association.slot);
+      const specializedSoundSlot = /spyattack/i.test(association.event)
+        ? "disguise"
+        : /defusekit/i.test(association.event) ? "defuse" : "";
+      const semanticSlot = weaponSound ? specializedSoundSlot || "weapon" : compactText(association.slot);
       const description = soundDescription(association.event, semanticSlot);
       const sourceOriginal = displayText(sample.original_text);
       const original = (
@@ -207,7 +206,7 @@ async function supplementalCosmonautDeathCues(sourceId) {
 
 function affiliationLabel(entity) {
   const affiliation = entity.affiliation;
-  return affiliation?.display_name || (entity.sides || []).join(" / ") || "苏军";
+  return affiliation?.display_name || (entity.sides || []).join(" / ") || PROFILE.sideLabel;
 }
 
 function representativePriority(unit) {
@@ -288,7 +287,7 @@ async function main() {
     const params = new URLSearchParams({
       source_id: source.id,
       kind,
-      side: "Nod",
+      side: PROFILE.side,
       language: "zh-CN",
       limit: "500",
     });
@@ -302,7 +301,9 @@ async function main() {
   const consideredUnits = details.filter((entity) => !isUnusedEntity(entity));
   const ignoredUnits = details.filter(isUnusedEntity);
   const units = consideredUnits.map((entity) => ({ ...entity, cues: voiceCues(entity) }));
-  const lunar = units.find((unit) => unit.id.toLowerCase() === "lunr");
+  const lunar = PROFILE.supplementalCosmonautDeath
+    ? units.find((unit) => unit.id.toLowerCase() === "lunr")
+    : null;
   if (lunar) {
     const known = new Set(lunar.cues.map((cue) => cue.assetId));
     const supplemental = (await supplementalCosmonautDeathCues(source.id))
@@ -337,17 +338,18 @@ async function main() {
   );
   const output = {
     schemaVersion: 1,
+    profile: PROFILE.key,
     generatedAt: new Date().toISOString(),
     appUrl: BASE_URL,
     appVersion: (await fetchJson("/api/health")).version,
     source: { id: source.id, scannedAt: source.scanned_at },
     selection: {
-      side: "Nod",
+      side: PROFILE.side,
       kinds: KINDS,
       requiresTranscript: false,
       requiresSpokenWords: false,
       includesVocalSoundSlots: true,
-      includesSupplementalCosmonautDeathEvent: true,
+      includesSupplementalCosmonautDeathEvent: PROFILE.supplementalCosmonautDeath,
       deduplicateSharedVoiceSets: true,
       excludesUnusedEntities: true,
     },

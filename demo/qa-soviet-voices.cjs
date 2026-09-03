@@ -2,15 +2,21 @@ const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 const { SLOT_ORDER, animationMatchesSlot, terminalPunctuationKind } = require("./voice-event-semantics.cjs");
+const { profileKeyFromArguments, voiceVideoProfile } = require("./voice-video-profiles.cjs");
 
 const ROOT = path.resolve(__dirname);
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "voice-video.config.json"), "utf8"));
-const RUN_DIR = process.argv[2]
-  ? path.resolve(process.argv[2])
-  : fs.readFileSync(path.join(ROOT, "latest-soviet-voices.txt"), "utf8").trim();
-const showcase = JSON.parse(fs.readFileSync(path.join(RUN_DIR, "soviet-voices-manifest.json"), "utf8"));
-const FINAL_VIDEO = process.argv[3]
-  ? path.resolve(process.argv[3])
+const arguments_ = process.argv.slice(2);
+const requestedProfile = voiceVideoProfile(profileKeyFromArguments(arguments_));
+const positional = arguments_.filter((value) => !value.startsWith("--"));
+const RUN_DIR = positional[0]
+  ? path.resolve(positional[0])
+  : fs.readFileSync(path.join(ROOT, `latest-${requestedProfile.filePrefix}.txt`), "utf8").trim();
+const recording = JSON.parse(fs.readFileSync(path.join(RUN_DIR, "recording-manifest.json"), "utf8"));
+const PROFILE = voiceVideoProfile(recording.profile || requestedProfile.key);
+const showcase = JSON.parse(fs.readFileSync(path.join(RUN_DIR, `${PROFILE.filePrefix}-manifest.json`), "utf8"));
+const FINAL_VIDEO = positional[1]
+  ? path.resolve(positional[1])
   : path.join(RUN_DIR, showcase.finalVideo);
 
 function run(executable, args) {
@@ -51,7 +57,12 @@ let groupCount = 0;
 let rawDuration = 0;
 let minimumCueSeparation = Infinity;
 check("使用语音自然时长", CONFIG.audio.timingMode === "natural", CONFIG.audio.timingMode);
-check("仅包含苏军步兵片段", showcase.segments?.length === 1 && showcase.segments[0]?.id === "infantry", (showcase.segments || []).map((segment) => segment.id));
+check(`仅包含${PROFILE.sideLabel}步兵片段`, showcase.profile === PROFILE.key
+  && showcase.segments?.length === 1
+  && showcase.segments[0]?.id === "infantry", {
+  profile: showcase.profile,
+  segments: (showcase.segments || []).map((segment) => segment.id),
+});
 for (const segment of showcase.segments || []) {
   cueCount += segment.audioCues?.length || 0;
   groupCount += segment.groups?.length || 0;
@@ -65,15 +76,17 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: CABLE 延迟在合理范围`, Number(segment.cableCaptureLatency) >= 0 && Number(segment.cableCaptureLatency) < 1.5, segment.cableCaptureLatency);
   check(`${segment.id}: 海报存在`, fs.existsSync(path.join(RUN_DIR, "posters", `${segment.id}.png`)), path.join(RUN_DIR, "posters", `${segment.id}.png`));
   check(`${segment.id}: 首帧录制前已显示标题`, segment.initialTransition?.preparedBeforeCapture === true
-    && segment.initialTransition?.title === "苏军步兵单位语音"
+    && segment.initialTransition?.title === PROFILE.sectionTitle
     && segment.initialTransition?.titleVisible === true
     && Number(segment.initialTransition?.opacity) === 1, segment.initialTransition);
   check(`${segment.id}: 主体画布位于文本图层上方`, Number(segment.presentationLayout?.subjectLayerZ) > Number(segment.presentationLayout?.transcriptLayerZ), segment.presentationLayout);
   check(`${segment.id}: 主体画布覆盖字幕所在高度`, segment.presentationLayout?.subjectCanvasCrossesTranscript === true, segment.presentationLayout);
-  const ivanLayout = segment.visualLayouts?.IVAN;
-  check(`${segment.id}: 使用疯狂伊文主体尺度基准`, ivanLayout
-    ? ivanLayout.targetUnit === "IVAN" && ivanLayout.basis === "height"
-    : Object.values(segment.visualLayouts || {}).every((layout) => layout.targetUnit === "IVAN"), ivanLayout || segment.visualLayouts);
+  const referenceLayout = segment.visualLayouts?.[PROFILE.scaleReferenceUnit];
+  check(`${segment.id}: 使用${PROFILE.scaleReferenceLabel}主体尺度基准`, referenceLayout
+    ? referenceLayout.targetUnit === PROFILE.scaleReferenceUnit && referenceLayout.basis === "height"
+    : Object.values(segment.visualLayouts || {}).every((layout) => (
+      layout.targetUnit === PROFILE.scaleReferenceUnit
+    )), referenceLayout || segment.visualLayouts);
   const targetSpan = Number(CONFIG.visual.subjectSpan);
   for (const group of segment.groups || []) {
     const groupCues = (segment.audioCues || []).filter((cue) => cue.unitId === group.id);
@@ -83,7 +96,8 @@ for (const segment of showcase.segments || []) {
     const animationSequences = new Set(groupCues.map((cue) => cue.animationSequence));
     check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Math.abs(Number(layout?.displaySpan) - targetSpan) <= 1, layout);
     check(`${segment.id}/${group.id}: 主体锚点有效`, [layout?.anchorX, layout?.anchorY, layout?.scale].every(Number.isFinite), layout);
-    check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, group.id !== "DOG" || layout?.basis === "width", layout);
+    check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, !PROFILE.horizontalScaleUnits.includes(group.id)
+      || layout?.basis === "width", layout);
     check(`${segment.id}/${group.id}: 透明主体画布可跨入顶部区域`, Number(layout?.headerOverlap) === Number(CONFIG.visual.subjectHeaderOverlap), layout);
     check(`${segment.id}/${group.id}: 完整源帧上沿不被画布裁切`, Number(layout?.sourceTopAtLowPosture) >= -1, layout);
     check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
@@ -223,7 +237,7 @@ const expectedGroups = showcase.smoke
 const expectedCues = showcase.smoke
   ? showcase.segments.reduce((total, segment) => total + Number(segment.expectedCueCount || 0), 0)
   : showcase.planSummary.presentations;
-check(`覆盖 ${expectedGroups} 个苏军步兵组`, groupCount === expectedGroups, groupCount);
+check(`覆盖 ${expectedGroups} 个${PROFILE.sideLabel}步兵组`, groupCount === expectedGroups, groupCount);
 check(`覆盖 ${expectedCues} 条单位声音`, cueCount === expectedCues, cueCount);
 
 const finalProbe = probe(FINAL_VIDEO, true);

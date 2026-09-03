@@ -2,12 +2,20 @@ const fs = require("fs");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const { chromium } = require("playwright");
-const { animationMatchesSlot, chooseCueEvent, eventLabel } = require("./voice-event-semantics.cjs");
+const {
+  animationMatchesSlot,
+  chooseCueEvent,
+  eventLabel,
+  terminalPunctuationKind,
+} = require("./voice-event-semantics.cjs");
 const { planAnimationSections } = require("./voice-animation-planner.cjs");
+const { profileKeyFromArguments, voiceVideoProfile } = require("./voice-video-profiles.cjs");
 
 const ROOT = path.resolve(__dirname);
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "voice-video.config.json"), "utf8"));
-const positional = process.argv.slice(2).filter((value) => !value.startsWith("--"));
+const arguments_ = process.argv.slice(2);
+const PROFILE = voiceVideoProfile(profileKeyFromArguments(arguments_));
+const positional = arguments_.filter((value) => !value.startsWith("--"));
 const BASE_URL = (positional[0] || "http://127.0.0.1:46120/").replace(/\/+$/, "");
 const KIND_FILTER = positional[1] || "infantry";
 const SMOKE = process.argv.includes("--smoke");
@@ -15,9 +23,9 @@ const PLAN_ONLY = process.argv.includes("--plan-only");
 const unitFilterArgument = process.argv.find((value) => value.startsWith("--units="));
 const UNIT_FILTER = new Set((unitFilterArgument?.slice("--units=".length) || "")
   .split(",").map((value) => value.trim().toUpperCase()).filter(Boolean));
-const PLAN_PATH = path.join(ROOT, "soviet-voices-plan.json");
+const PLAN_PATH = path.join(ROOT, `${PROFILE.filePrefix}-plan.json`);
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
-const RUN_DIR = path.join(ROOT, `soviet-voices-${SMOKE ? "smoke-" : ""}${RUN_ID}`);
+const RUN_DIR = path.join(ROOT, `${PROFILE.filePrefix}-${SMOKE ? "smoke-" : ""}${RUN_ID}`);
 const RAW_DIR = path.join(RUN_DIR, "raw");
 const AUDIO_DIR = path.join(RUN_DIR, "audio");
 const POSTER_DIR = path.join(RUN_DIR, "posters");
@@ -26,7 +34,7 @@ const HEIGHT = CONFIG.viewport.height;
 const SOURCE_WIDTH = CONFIG.output.width;
 const SOURCE_HEIGHT = CONFIG.output.height;
 const FPS = CONFIG.output.frameRate;
-const SECTION_LABELS = { infantry: "苏军步兵单位语音" };
+const SECTION_LABELS = { infantry: PROFILE.sectionTitle };
 const SUBJECT_HEADER_OVERLAP = Number(CONFIG.visual.subjectHeaderOverlap) || 380;
 const SUBJECT_CANVAS_BASE_HEIGHT = Number(CONFIG.visual.subjectCanvasBaseHeight) || 1200;
 const SUBJECT_BASELINE_NORMAL = 765;
@@ -37,7 +45,9 @@ for (const directory of [RUN_DIR, RAW_DIR, AUDIO_DIR, POSTER_DIR]) {
 }
 
 function runPlanner() {
-  const result = spawnSync(process.execPath, [path.join(ROOT, "plan-soviet-voices.cjs"), BASE_URL, PLAN_PATH], {
+  const result = spawnSync(process.execPath, [
+    path.join(ROOT, "plan-soviet-voices.cjs"), BASE_URL, PLAN_PATH, `--profile=${PROFILE.key}`,
+  ], {
     cwd: ROOT,
     encoding: "utf8",
     windowsHide: true,
@@ -55,7 +65,7 @@ function mediaUrl(assetId) {
 }
 
 function assetPreviewUrl(assetId, frame, shadowFrame, scale = 12, options = {}) {
-  const { paletteKind = "unit", paletteId = "", playerColor = CONFIG.visual.playerColor } = options;
+  const { paletteKind = "unit", paletteId = "", playerColor = PROFILE.playerColor } = options;
   const params = new URLSearchParams({
     frame: String(frame),
     scale: String(scale),
@@ -73,7 +83,7 @@ function entityPreviewUrl(sourceId, entityId, facing, scale = 8) {
     facing: String(facing),
     scale: String(scale),
     thumbnail: "true",
-    player_color: CONFIG.visual.playerColor,
+    player_color: PROFILE.playerColor,
   });
   return `${BASE_URL}/api/entities/${encodeURIComponent(sourceId)}/${encodeURIComponent(entityId)}/preview.png?${params}`;
 }
@@ -118,14 +128,19 @@ function loopableSequence(sequence, slot) {
 }
 
 function sequencePreferences(slot, unitId, eventName) {
-  if (slot === "move" && unitId === "LUNR") return [["fly"]];
-  if (["attack", "weapon", "special_attack"].includes(slot) && unitId === "LUNR") return [["firefly"]];
-  if (["attack", "weapon", "special_attack"].includes(slot) && ["TERROR", "IVAN"].includes(unitId)) {
+  if (slot === "move" && PROFILE.flyingUnits.includes(unitId)) return [["fly"]];
+  if (["attack", "weapon", "special_attack"].includes(slot) && PROFILE.flyingUnits.includes(unitId)) {
+    return [["firefly"]];
+  }
+  if (["attack", "weapon", "special_attack"].includes(slot) && PROFILE.explosiveUnits.includes(unitId)) {
     return [["deploy"]];
   }
   if (slot === "weapon" && /deploy/i.test(String(eventName || ""))) {
     return [["deployedfire"], ["deploy"], ["fireup"]];
   }
+  const amphibiousAttack = PROFILE.amphibiousUnits.includes(unitId)
+    ? [["fireup"], ["fireprone"], ["wetattack"], ["deployedfire"]]
+    : [["fireup"], ["fireprone"], ["deployedfire"]];
   const preferences = {
     select: [["idle1"], ["idle2"], ["ready", "guard"]],
     create: [["cheer"], ["idle1"], ["idle2"], ["ready", "guard"]],
@@ -133,11 +148,14 @@ function sequencePreferences(slot, unitId, eventName) {
     enter: [["walk", "enter"]],
     capture: [["walk", "capture"], ["deploy"]],
     deploy: [["deploy"], ["deployedfire"], ["crawl"]],
+    disguise: [["walk"], ["idle1"], ["idle2"], ["ready", "guard"]],
+    infiltrate: [["walk", "enter"], ["idle1"], ["idle2"], ["ready", "guard"]],
+    defuse: [["deploy"], ["walk"], ["idle1"], ["idle2"]],
     harvest: [["work", "harvest"], ["walk"], ["idle1"], ["idle2"]],
-    attack: [["fireup"], ["fireprone"], ["deployedfire"]],
-    weapon: [["fireup"], ["fireprone"], ["deployedfire"]],
+    attack: amphibiousAttack,
+    weapon: amphibiousAttack,
     special_attack: [["deploy"], ["deployedfire"], ["fireup", "firefly"]],
-    feedback: unitId === "LUNR" ? [["panic"]] : [["panic"], ["crawl"]],
+    feedback: PROFILE.flyingUnits.includes(unitId) ? [["panic"]] : [["panic"], ["crawl"]],
     die: [["die1"], ["die2"], ["death"], ["tumble"]],
   };
   return preferences[slot] || preferences.select;
@@ -238,7 +256,7 @@ function animationCandidates(group, section, sourceId) {
     group.representative.id,
     cue.eventName,
   ).map((sequence) => sequenceDescriptor(visual, sequence, slot));
-  if (slot === "die" && group.representative.id === "LUNR") {
+  if (slot === "die" && PROFILE.flyingUnits.includes(group.representative.id)) {
     const airDeath = ["airdeathstart", "airdeathfinish"]
       .map((name) => (visual.sequences || []).find((sequence) => (
         validSequence(visual, sequence) && String(sequence.event || "").toLowerCase() === name
@@ -344,10 +362,16 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
 function validateDescriptionMarkers(groups) {
   for (const group of groups) {
     for (const cue of group.cues) {
-      const translation = cue.translated || cue.localized || "";
+      const translation = cue.translated || "";
       const originalHasCue = /<[^<>]+>/.test(cue.original || "");
       if (!cue.original) {
         throw new Error(`${cue.assetName} 缺少原文或英文音效描述`);
+      }
+      if (!translation) {
+        throw new Error(`${cue.assetName} 尚未完成编辑译文`);
+      }
+      if (terminalPunctuationKind(cue.original) !== terminalPunctuationKind(translation)) {
+        throw new Error(`${cue.assetName} 的译文句末标点与原文不一致：${translation}`);
       }
       if (originalHasCue && !/<[^<>]+>/.test(translation)) {
         throw new Error(`${cue.assetName} 的译文没有保留原文提示尖括号：${translation}`);
@@ -357,19 +381,11 @@ function validateDescriptionMarkers(groups) {
 }
 
 function smokeSelection(groups) {
-  const extraSlots = {
-    E2: ["weapon", "feedback", "die"],
-    SENGINEER: ["move", "capture", "weapon", "feedback", "die"],
-    TERROR: ["move", "attack", "feedback", "die"],
-    SHK: ["move", "weapon", "feedback", "die"],
-    IVAN: ["move", "attack", "die"],
-    DESO: ["move", "attack", "weapon", "die"],
-    BORIS: ["create", "move", "attack", "weapon", "feedback", "die"],
-    LUNR: ["move", "attack", "weapon", "feedback", "die"],
-    DOG: ["weapon", "feedback", "die"],
-  };
   return groups.map((group) => {
-    const slots = new Set([group.cues[0]?.slot, ...(extraSlots[group.representative.id] || [])].filter(Boolean));
+    const slots = new Set([
+      group.cues[0]?.slot,
+      ...(PROFILE.smokeSlots[group.representative.id] || []),
+    ].filter(Boolean));
     const selected = [...new Map(group.cues
       .filter((cue) => slots.has(cue.slot))
       .map((cue) => [`${cue.slot}:${cue.animation.runId}`, cue])).values()];
@@ -435,14 +451,15 @@ function presentationHtml() {
   const eventGapBelowName = Number(CONFIG.visual.eventGapBelowName) || 45;
   const unitFadeSeconds = Number(CONFIG.visual.unitFadeSeconds) || 0.38;
   const unitSlideSeconds = Number(CONFIG.visual.unitSlideSeconds) || 0.56;
+  const colors = PROFILE.colors;
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
-    .shell{position:relative;display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{position:relative;z-index:2;display:grid;place-items:center;padding:16px 24px 8px;overflow:visible}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current-label{position:relative;max-width:100%}.unit-current strong{display:block;max-width:100%;overflow:hidden;color:#ef625c;font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px rgba(156,35,31,.32)}
-    .content{position:relative;z-index:1;display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,rgba(139,42,38,.28),rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:40px;left:40px;z-index:6;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;top:calc(100% + ${eventGapBelowName}px);left:50%;z-index:4;display:flex;align-items:center;justify-content:center;transform:translateX(-50%);transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:#dc8a85;font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52);white-space:nowrap}.event i{display:none}
-    .voice{position:relative;z-index:2;display:grid;overflow:visible;padding:0 42px 18px;transition:opacity ${unitFadeSeconds}s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:#ef625c;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px rgba(153,35,31,.22)}.localized{max-width:980px;color:#ffb0aa;font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
-    .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#a93632,#ed5a54);transition:width .22s ease}
-    .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.instant{transition:none}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:#ffb0aa;font-size:42px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:#ef625c;font-size:98px;line-height:1.2;text-shadow:0 14px 42px rgba(132,25,22,.38)}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:#d96a65;font-family:"Segoe UI",sans-serif;font-size:34px;font-weight:600}
+    .shell{position:relative;display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{position:relative;z-index:2;display:grid;place-items:center;padding:16px 24px 8px;overflow:visible}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current-label{position:relative;max-width:100%}.unit-current strong{display:block;max-width:100%;overflow:hidden;color:${colors.primary};font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px ${colors.primaryShadow}}
+    .content{position:relative;z-index:1;display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,${colors.glow},rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:40px;left:40px;z-index:6;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;top:calc(100% + ${eventGapBelowName}px);left:50%;z-index:4;display:flex;align-items:center;justify-content:center;transform:translateX(-50%);transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:${colors.event};font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52);white-space:nowrap}.event i{display:none}
+    .voice{position:relative;z-index:2;display:grid;overflow:visible;padding:0 42px 18px;transition:opacity ${unitFadeSeconds}s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:${colors.primary};font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px ${colors.textShadow}}.localized{max-width:980px;color:${colors.secondary};font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
+    .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,${colors.accentStart},${colors.accentEnd});transition:width .22s ease}
+    .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.instant{transition:none}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:${colors.secondary};font-size:42px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:${colors.primary};font-size:98px;line-height:1.2;text-shadow:0 14px 42px ${colors.titleShadow}}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:${colors.event};font-family:"Segoe UI",sans-serif;font-size:34px;font-weight:600}
     .unit-track{transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1),filter ${unitFadeSeconds}s ease;will-change:opacity,transform,filter}.unit-leaving .unit-track{opacity:0;transform:translateX(-110px) scale(.965);filter:blur(3px)}.unit-entering .unit-track{opacity:0;transform:translateX(110px) scale(.965);filter:blur(3px)}.unit-leaving .subject{opacity:0;transform:translateX(-54px) scale(.985)}.unit-entering .subject{opacity:0;transform:translateX(54px) scale(.985)}.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
   </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><div class="unit-current-label"><strong></strong><div class="voice-head"><span class="event"><i></i><b></b></span></div></div></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
     window.__voiceTimer = 0;
@@ -567,7 +584,12 @@ async function installPresentation(page, kind, groups) {
   const targetSpan = Number(CONFIG.visual.subjectSpan) || 576;
   const headerOverlap = SUBJECT_HEADER_OVERLAP;
   const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
-  const visualAudit = await page.evaluate(async ({ values, frameGroups, animations, targetSpan, headerOverlap, lowBaseline }) => {
+  const scaleReferenceUnit = PROFILE.scaleReferenceUnit;
+  const horizontalScaleUnits = PROFILE.horizontalScaleUnits;
+  const visualAudit = await page.evaluate(async ({
+    values, frameGroups, animations, targetSpan, headerOverlap, lowBaseline,
+    scaleReferenceUnit, horizontalScaleUnits,
+  }) => {
     const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
       const image = new Image();
@@ -656,11 +678,12 @@ async function installPresentation(page, kind, groups) {
         anchorY: median(references.map((sample) => sample.bounds.bottom)),
       };
     });
-    const ivan = samples.find((sample) => sample.unitId === "IVAN");
+    const scaleReference = samples.find((sample) => sample.unitId === scaleReferenceUnit);
     values.forEach(boundsFor);
     const layouts = {};
     for (const sample of samples) {
-      const dimension = sample.unitId === "DOG" ? sample.referenceWidth : sample.referenceHeight;
+      const horizontalScale = horizontalScaleUnits.includes(sample.unitId);
+      const dimension = horizontalScale ? sample.referenceWidth : sample.referenceHeight;
       const scale = Math.min(4.2, Math.max(1.8, targetSpan / Math.max(1, dimension)));
       layouts[sample.unitId] = {
         scale,
@@ -669,8 +692,8 @@ async function installPresentation(page, kind, groups) {
         referenceHeight: sample.referenceHeight,
         referenceWidth: sample.referenceWidth,
         displaySpan: dimension * scale,
-        basis: sample.unitId === "DOG" ? "width" : "height",
-        targetUnit: ivan?.unitId || "IVAN",
+        basis: horizontalScale ? "width" : "height",
+        targetUnit: scaleReference?.unitId || scaleReferenceUnit,
         headerOverlap,
         sourceTopAtLowPosture: lowBaseline - sample.anchorY * scale,
       };
@@ -702,9 +725,18 @@ async function installPresentation(page, kind, groups) {
         subjectCanvasCrossesTranscript: stageRect.bottom > voiceRect.top,
       },
     };
-  }, { values: urls, frameGroups, animations, targetSpan, headerOverlap, lowBaseline });
+  }, {
+    values: urls,
+    frameGroups,
+    animations,
+    targetSpan,
+    headerOverlap,
+    lowBaseline,
+    scaleReferenceUnit,
+    horizontalScaleUnits,
+  });
   const { visualLayouts } = visualAudit;
-  console.log(`[visual] 以疯狂伊文为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
+  console.log(`[visual] 以${PROFILE.scaleReferenceLabel}为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
   const audioAssets = [...new Map(groups.flatMap((group) => group.cues).map((cue) => [
     cue.assetId,
     mediaUrl(cue.assetId),
@@ -1151,7 +1183,9 @@ async function recordSection(browser, kind, groups) {
 }
 
 async function main() {
-  if (!["all", "infantry"].includes(KIND_FILTER)) throw new Error(`本期仅录制苏军步兵，未知分类：${KIND_FILTER}`);
+  if (!["all", "infantry"].includes(KIND_FILTER)) {
+    throw new Error(`本期仅录制${PROFILE.sideLabel}步兵，未知分类：${KIND_FILTER}`);
+  }
   const plan = runPlanner();
   const cameoPaletteId = await findCameoPaletteId(plan.source.id);
   if (!cameoPaletteId) throw new Error("没有找到当前资料库的 CAMEO.PAL");
@@ -1203,7 +1237,8 @@ async function main() {
   });
   const manifest = {
     schemaVersion: 1,
-    title: "苏军步兵单位语音全览",
+    profile: PROFILE.key,
+    title: PROFILE.manifestTitle,
     appUrl: BASE_URL,
     appVersion: plan.appVersion,
     pagesUrl: CONFIG.pagesUrl,
@@ -1227,7 +1262,7 @@ async function main() {
     await browser.close();
   }
   fs.writeFileSync(path.join(RUN_DIR, "recording-manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
-  fs.writeFileSync(path.join(ROOT, "latest-soviet-voices.txt"), RUN_DIR, "utf8");
+  fs.writeFileSync(path.join(ROOT, `latest-${PROFILE.filePrefix}.txt`), RUN_DIR, "utf8");
   console.log(JSON.stringify({
     runDirectory: RUN_DIR,
     segments: manifest.segments.map((segment) => ({ id: segment.id, cues: segment.audioCues.length, errors: segment.errors.length })),

@@ -49,26 +49,29 @@ X:\IndexTTS2\.venv\Scripts\python.exe generate_showcase_narration.py ^
 ## 合成与验收
 
 ```bat
-node render-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS v0.13.1
-node qa-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS showcase-YYYY-MM-DDTHH-MM-SS\final\RA2-Explorer-Complete-Showcase-v0.13.1.mp4
+node render-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS v0.14.0
+node qa-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS showcase-YYYY-MM-DDTHH-MM-SS\final\RA2-Explorer-Complete-Showcase-v0.14.0.mp4
 ```
 
 合成器按配置统一收紧演示节奏，输出 H.264 2560×1440、30 fps 和 AAC 48 kHz 双声道，并写入七个章节标记。QA 会检查七章齐全、页面与网络错误、源分辨率、CABLE 路由与延迟、旁白重叠、游戏声音数量、演示节奏、最终编码、章节和总时长，并生成被忽略的 `qa-report.json`。
 
 `assemble-showcase.cjs` 只用于从多次局部录制中选择每章最新的无错误片段；完整录制成功时直接使用原运行目录即可。
 
-## 苏军步兵单位语音全览
+## 阵营步兵单位语音全览
 
-专用流水线遍历规则中属于苏军的步兵，纳入选中、出场、移动、攻击、开火、受击、阵亡等事件关联的全部单位声音。警犬吼叫及无台词的阵亡声音也会保留；未使用的规则实体会被排除，多个单位使用完全相同的声音集合时只播放一次。每条声音展示单位图标、与事件相符且通过帧边界检查的主体动作、游戏文件中的英文原文，以及游戏中文或 RA2 Explorer 译文。普通武器声音排在精英变体之前，译文句末标点跟随原文；无文本音效统一保留 `<…>` 标记，录制器不会使用 ASR 改写单位语音原文。
+专用流水线通过 `soviet` 和 `allied` 配置分别遍历苏军、盟军步兵，纳入选中、出场、移动、攻击、开火、受击、阵亡及阵营专属事件关联的全部单位声音。警犬吼叫及无台词的阵亡声音也会保留；未使用的规则实体会被排除，多个单位使用完全相同的声音集合时只播放一次。每条声音展示单位图标、与事件相符且通过帧边界检查的主体动作、游戏文件中的英文原文，以及游戏中文或 RA2 Explorer 译文。普通武器声音排在精英变体之前，译文句末标点跟随原文；无文本音效统一保留 `<…>` 标记，录制器不会使用 ASR 改写单位语音原文。
 
 录制器先按声音事件划分动作段，再根据每段语音数量预计算需要的主体动作。相邻语音优先连续播放同一个行走、匍匐、开火或待机循环，动作段中途不会回到首帧；每段约两条语音后才在语义允许时换用另一个动作，以兼顾连续性和覆盖度。两帧的卧倒、起身序列只在姿态发生变化时播放一次，绝不作为独立循环；阵亡、空中坠落和翻滚序列只用于阵亡声音，播放一次后停在尾帧，相邻阵亡声音尽可能交替不同序列。越过主体帧边界的规则序列会在规划阶段排除，浏览器还会对实际渲染帧做变化检测，避免录入静止循环。
 
 画面为 1080×1920 竖屏：顶部横向呈现上一个、当前和下一个单位，中间播放单位动作，下方居中显示英文与中文，底部为总进度。画面使用无卡片边框的沉浸式布局；仅片头显示项目来源、主标题和精简版地址，并从视频第一帧直接出现。事件文字固定在当前单位名称下方 45 px，不会随动作帧移动。人物比例从不含大范围环境特效的稳定主体动作估计；透明主体画布位于文字图层上方并延伸到字幕区域，角色的不透明像素可以自然覆盖文字，而透明部分仍显示其下方内容。
 
-先生成并检查清单：
+先生成并检查声音清单。审计会阻止缺少原文、译文、对应标点或尖括号标记的内容进入录制：
 
 ```bat
 npm run voices:plan -- http://127.0.0.1:46120/
+npm run voices:audit
+npm run allied-voices:plan -- http://127.0.0.1:46120/
+npm run allied-voices:audit
 ```
 
 修改动作规划时，可先运行纯规划和单元测试，不启动浏览器、录屏或音频设备：
@@ -76,6 +79,7 @@ npm run voices:plan -- http://127.0.0.1:46120/
 ```bat
 npm run voices:animations:test
 node record-soviet-voices.cjs http://127.0.0.1:46120/ infantry --plan-only
+node record-soviet-voices.cjs --profile=allied http://127.0.0.1:46120/ infantry --plan-only
 npm run voices:animations:inspect -- LUNR SENGINEER
 ```
 
@@ -86,19 +90,23 @@ npm run voices:animations:inspect -- LUNR SENGINEER
 ```bat
 npm run audio:verify
 npm run voices:record -- http://127.0.0.1:46120/ infantry
+npm run allied-voices:record -- http://127.0.0.1:46120/ infantry
 ```
 
 `all` 作为兼容参数同样只录本期的步兵内容。开发时可追加 `--smoke`：它保留全部九个单位，并按动作段抽取常规语音以及有代表性的移动、开火、受击和阵亡事件，以较短素材覆盖单位切换、姿态过渡、无文本音效和特殊动作：
 
 ```bat
 npm run voices:record -- http://127.0.0.1:46120/ infantry --smoke
+npm run allied-voices:record -- http://127.0.0.1:46120/ infantry --smoke
 ```
 
 录制完成后，命令会输出运行目录。使用该目录名完成合成与验收：
 
 ```bat
-npm run voices:render -- soviet-voices-YYYY-MM-DDTHH-MM-SS v0.13.1
+npm run voices:render -- soviet-voices-YYYY-MM-DDTHH-MM-SS v0.14.0
 npm run voices:qa -- soviet-voices-YYYY-MM-DDTHH-MM-SS
+npm run allied-voices:render -- allied-voices-YYYY-MM-DDTHH-MM-SS v0.14.0
+npm run allied-voices:qa -- allied-voices-YYYY-MM-DDTHH-MM-SS
 ```
 
 合成器输出带逐单位章节的步兵版视频，编码为 H.264 1080×1920、30 fps 和 AAC 48 kHz 双声道。录制逐条等待原始声音自然结束，相邻声音约保留 0.50 秒间隔，单位切换使用完整的淡出、横向滑动和淡入过场；不设置目标总时长，也不通过倍速或裁剪压缩内容。验收覆盖声音清单完整性、动作语义、动作段连续性、阵亡交替、姿态过渡、渲染帧变化、事件文字固定位置、主体与字幕图层、首帧片头、声音间隔、最后一条声音边界、页面与网络错误、CABLE 路由和时延、源分辨率、帧时钟、中英文文本、最终编码及章节数量。
