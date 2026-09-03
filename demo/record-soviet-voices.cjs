@@ -3,6 +3,8 @@ const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const { chromium } = require("playwright");
 const {
+  animationIntentForCue,
+  animationMatchesIntent,
   animationMatchesSlot,
   chooseCueEvent,
   eventLabel,
@@ -161,9 +163,22 @@ function sequencePreferences(slot, unitId, eventName) {
   return preferences[slot] || preferences.select;
 }
 
-function sequenceCandidatesForSlot(visual, slot, unitId, eventName) {
+function sequenceCandidatesForSlot(visual, slot, unitId, eventName, intent) {
   const sequences = (visual.sequences || [])
     .filter((sequence) => validSequence(visual, sequence) && loopableSequence(sequence, slot));
+  if (intent?.sequenceNames?.length) {
+    const intended = [];
+    const intendedKeys = new Set();
+    for (const name of intent.sequenceNames) {
+      for (const sequence of sequences.filter((candidate) => sequenceNamed(candidate, [name]))) {
+        const key = sequenceKey(sequence);
+        if (intendedKeys.has(key)) continue;
+        intendedKeys.add(key);
+        intended.push(sequence);
+      }
+    }
+    return intended;
+  }
   const matched = [];
   const seen = new Set();
   for (const names of sequencePreferences(slot, unitId, eventName)) {
@@ -207,7 +222,7 @@ function stableSubjectReferenceFrames(group) {
 }
 
 function animationPosture(event) {
-  return /crawl|prone|die|death|tumble|deployedfire/i.test(String(event)) ? "low" : "normal";
+  return /crawl|prone|die|death|tumble|deploy/i.test(String(event)) ? "low" : "normal";
 }
 
 function semanticAnimationEvent(sequence, slot) {
@@ -231,7 +246,7 @@ function sequenceDescriptor(visual, sequence, slot) {
     intervalMs: Number(sequence.rate_ms) > 0 ? Number(sequence.rate_ms) : CONFIG.visual.frameIntervalMs,
     posture: animationPosture(event),
     sequenceId: sequenceKey(sequence),
-    playbackMode: slot === "die" ? "once-hold" : "loop",
+    playbackMode: slot === "die" || /^deploy$/i.test(String(event)) ? "once-hold" : "loop",
   };
 }
 
@@ -255,6 +270,7 @@ function animationCandidates(group, section, sourceId) {
     slot,
     group.representative.id,
     cue.eventName,
+    cue.animationIntent,
   ).map((sequence) => sequenceDescriptor(visual, sequence, slot));
   if (slot === "die" && PROFILE.flyingUnits.includes(group.representative.id)) {
     const airDeath = ["airdeathstart", "airdeathfinish"]
@@ -303,11 +319,19 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
     const semanticCues = group.cues.map((cue) => {
       const event = cue.primaryEvent || chooseCueEvent(cue, group.representative.id);
       const slot = event.slot || "select";
-      return {
+      const semanticCue = {
         ...cue,
         slot,
         eventLabel: eventLabel(event),
         eventName: event.event || "",
+      };
+      return {
+        ...semanticCue,
+        animationIntent: animationIntentForCue(semanticCue, {
+          amphibious: PROFILE.amphibiousUnits.includes(group.representative.id),
+          explosive: PROFILE.explosiveUnits.includes(group.representative.id),
+          flying: PROFILE.flyingUnits.includes(group.representative.id),
+        }),
       };
     });
     const cues = planAnimationSections(semanticCues, {
@@ -330,6 +354,9 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
       }
       if (!animationMatchesSlot(cue.slot, animation.event)) {
         throw new Error(`${group.representative.name}/${cue.assetName} 的 ${cue.slot} 事件错误匹配到 ${animation.event}`);
+      }
+      if (!animationMatchesIntent(cue.animationIntent, animation.event)) {
+        throw new Error(`${group.representative.name}/${cue.assetName} 的细分动作 ${cue.animationIntent.key} 错误匹配到 ${animation.event}`);
       }
       return {
         ...cue,
@@ -508,7 +535,7 @@ function presentationHtml() {
       const intro = (animation.introFrames || []).map((src) => window.__voiceFrames[src]).filter(Boolean);
       const loop = (animation.loopFrames || animation.frames || []).map((src) => window.__voiceFrames[src]).filter(Boolean);
       const scale = layout.scale;
-      const baseline = (animation.posture === 'low' ? ${lowBaseline} : ${normalBaseline}) + (layout.verticalOffset || 0);
+      const baseline = animation.posture === 'low' ? ${lowBaseline} : ${normalBaseline};
       const drawLeft = canvas.width / 2 - layout.anchorX * scale;
       const drawTop = baseline - layout.anchorY * scale;
       let phase = intro.length ? 'intro' : 'loop';
@@ -573,7 +600,6 @@ async function installPresentation(page, kind, groups) {
   const frameGroups = groups.map((group) => ({
     unitId: group.representative.id,
     referenceFrames: stableSubjectReferenceFrames(group),
-    allFrames: [...new Set(group.cues.flatMap((cue) => cue.animation.frames).filter(Boolean))],
   }));
   const urls = [...new Set(groups.flatMap((group) => [
     group.cameoUrl,
@@ -594,7 +620,7 @@ async function installPresentation(page, kind, groups) {
   const horizontalScaleUnits = PROFILE.horizontalScaleUnits;
   const visualScaleByUnit = PROFILE.visualScaleByUnit;
   const visualAudit = await page.evaluate(async ({
-    values, frameGroups, animations, targetSpan, headerOverlap, lowBaseline,
+    values, frameGroups, animations, targetSpan, headerOverlap,
     scaleReferenceUnit, horizontalScaleUnits, visualScaleByUnit,
   }) => {
     const records = {};
@@ -676,9 +702,6 @@ async function installPresentation(page, kind, groups) {
       const references = [...new Set(group.referenceFrames)]
         .map((src) => ({ src, bounds: boundsFor(src) }))
         .filter((sample) => sample.bounds);
-      const visibleBounds = [...new Set(group.allFrames)]
-        .map((src) => boundsFor(src))
-        .filter(Boolean);
       return {
         unitId: group.unitId,
         references,
@@ -686,7 +709,6 @@ async function installPresentation(page, kind, groups) {
         referenceWidth: quantile(references.map((sample) => sample.bounds.width), 0.7),
         anchorX: median(references.map((sample) => (sample.bounds.left + sample.bounds.right) / 2)),
         anchorY: median(references.map((sample) => sample.bounds.bottom)),
-        visibleTop: Math.min(...visibleBounds.map((bounds) => bounds.top)),
       };
     });
     const scaleReference = samples.find((sample) => sample.unitId === scaleReferenceUnit);
@@ -697,12 +719,9 @@ async function installPresentation(page, kind, groups) {
       const dimension = horizontalScale ? sample.referenceWidth : sample.referenceHeight;
       const visualScale = Number(visualScaleByUnit[sample.unitId]) || 1;
       const scale = Math.min(4.4, Math.max(1.6, targetSpan / Math.max(1, dimension) * visualScale));
-      const visibleTopAtLowPosture = lowBaseline - sample.anchorY * scale + sample.visibleTop * scale;
-      const verticalOffset = Math.max(0, 12 - visibleTopAtLowPosture);
       layouts[sample.unitId] = {
         scale,
         visualScale,
-        verticalOffset,
         anchorX: sample.anchorX,
         anchorY: sample.anchorY,
         referenceHeight: sample.referenceHeight,
@@ -711,8 +730,6 @@ async function installPresentation(page, kind, groups) {
         basis: horizontalScale ? "width" : "height",
         targetUnit: scaleReference?.unitId || scaleReferenceUnit,
         headerOverlap,
-        sourceTopAtLowPosture: lowBaseline - sample.anchorY * scale,
-        visibleTopAtLowPosture: visibleTopAtLowPosture + verticalOffset,
       };
     }
     const animationMotion = Object.fromEntries(animations.map((animation) => {
@@ -748,7 +765,6 @@ async function installPresentation(page, kind, groups) {
     animations,
     targetSpan,
     headerOverlap,
-    lowBaseline,
     scaleReferenceUnit,
     horizontalScaleUnits,
     visualScaleByUnit,
@@ -836,7 +852,6 @@ async function showUnit(page, groups, groupIndex) {
       ...first,
       introFrames: [],
       loopFrames: first.loopFrames || first.frames || [],
-      runId: 'unit-intro:' + group.representative.id,
       playbackMode: "loop",
     };
     window.__setAnimation(animation, group.representative.id, true);
@@ -1146,6 +1161,8 @@ async function recordSection(browser, kind, groups) {
           translated: cue.translated,
           textLabel: cue.textLabel,
           animationEvent: cue.animation.event,
+          animationIntent: cue.animationIntent.key,
+          animationIntentNames: cue.animationIntent.sequenceNames,
           animationSequence: cue.animation.sequenceId,
           animationRunId: cue.animation.runId,
           animationPlaybackMode: cue.animation.playbackMode,
@@ -1154,6 +1171,7 @@ async function recordSection(browser, kind, groups) {
           animationLoopFrameCount: cue.animation.loopFrames.length,
           animationDistinctLoopFrames: visualAudit.animationMotion[cue.animation.sequenceId]?.distinctLoopFrames,
           animationSectionKey: cue.animation.sectionKey,
+          animationSectionIndex: cue.animation.sectionIndex,
           animationSectionCueIndex: cue.animation.sectionCueIndex,
           animationSectionCueCount: cue.animation.sectionCueCount,
           animationSectionCount: cue.animation.sectionAnimationCount,
@@ -1231,8 +1249,12 @@ async function main() {
           slot: cue.slot,
           eventName: cue.eventName,
           animationEvent: cue.animation.event,
+          animationIntent: cue.animationIntent.key,
+          animationIntentNames: cue.animationIntent.sequenceNames,
           animationSequence: cue.animation.sequenceId,
           animationRunId: cue.animation.runId,
+          animationSectionKey: cue.animation.sectionKey,
+          animationSectionIndex: cue.animation.sectionIndex,
           playbackMode: cue.animation.playbackMode,
           transitionEvents: cue.animation.transitionEvents,
           introFrameCount: cue.animation.introFrames.length,

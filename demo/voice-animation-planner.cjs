@@ -1,7 +1,10 @@
 function animationSectionKey(cue) {
   const slot = cue.slot || "select";
-  if (!["weapon", "deploy", "special_attack"].includes(slot)) return slot;
-  return [slot, cue.eventName || "", cue.weaponTier || ""].join(":").toLowerCase();
+  const intent = cue.animationIntent?.key || "";
+  if (!["weapon", "deploy", "special_attack"].includes(slot)) {
+    return [slot, intent].filter(Boolean).join(":").toLowerCase();
+  }
+  return [slot, cue.eventName || "", cue.weaponTier || "", intent].join(":").toLowerCase();
 }
 
 function splitAnimationSections(cues) {

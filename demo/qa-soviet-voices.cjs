@@ -1,7 +1,12 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { SLOT_ORDER, animationMatchesSlot, terminalPunctuationKind } = require("./voice-event-semantics.cjs");
+const {
+  SLOT_ORDER,
+  animationMatchesIntent,
+  animationMatchesSlot,
+  terminalPunctuationKind,
+} = require("./voice-event-semantics.cjs");
 const { profileKeyFromArguments, voiceVideoProfile } = require("./voice-video-profiles.cjs");
 
 const ROOT = path.resolve(__dirname);
@@ -101,7 +106,7 @@ for (const segment of showcase.segments || []) {
     check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, !PROFILE.horizontalScaleUnits.includes(group.id)
       || layout?.basis === "width", layout);
     check(`${segment.id}/${group.id}: 透明主体画布可跨入顶部区域`, Number(layout?.headerOverlap) === Number(CONFIG.visual.subjectHeaderOverlap), layout);
-    check(`${segment.id}/${group.id}: 不透明主体上沿不被画布裁切`, Number(layout?.visibleTopAtLowPosture) >= -1, layout);
+    check(`${segment.id}/${group.id}: 高延伸帧不改变主体固定基线`, !Number(layout?.verticalOffset), layout);
     check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
     check(`${segment.id}/${group.id}: 精英武器声音位于普通武器之后`, weaponTiers.every((tier, index) => (
       index === 0 || weaponTiers[index - 1] !== "elite" || tier === "elite"
@@ -116,9 +121,10 @@ for (const segment of showcase.segments || []) {
       cueCount: groupCues.length,
       animationSequences: [...animationSequences],
     });
-    const sectionKeys = [...new Set(groupCues.map((cue) => cue.animationSectionKey))];
+    const sectionKeys = [...new Set(groupCues.map((cue) => `${cue.animationSectionIndex}:${cue.animationSectionKey}`))];
     for (const sectionKey of sectionKeys) {
-      const sectionCues = groupCues.filter((cue) => cue.animationSectionKey === sectionKey);
+      const [sectionIndex] = sectionKey.split(":", 1);
+      const sectionCues = groupCues.filter((cue) => String(cue.animationSectionIndex) === sectionIndex);
       const plannedCount = Number(sectionCues[0]?.animationSectionCount || 1);
       const runIds = new Set(sectionCues.map((cue) => cue.animationRunId));
       const sectionSequences = new Set(sectionCues.map((cue) => cue.animationSequence));
@@ -160,6 +166,12 @@ for (const segment of showcase.segments || []) {
     }
     check(`${segment.id}/${cue.assetId}: 主体动作匹配声音事件`, animationMatchesSlot(cue.slot, cue.animationEvent), {
       slot: cue.slot,
+      animationEvent: cue.animationEvent,
+    });
+    check(`${segment.id}/${cue.assetId}: 主体动作匹配语音细分含义`, animationMatchesIntent({
+      sequenceNames: cue.animationIntentNames || String(cue.animationIntent || "").split("+").filter(Boolean),
+    }, cue.animationEvent), {
+      intent: cue.animationIntent,
       animationEvent: cue.animationEvent,
     });
     check(`${segment.id}/${cue.assetId}: 动作候选与复用统计有效`, Number(cue.animationCandidateCount) >= 1

@@ -1,6 +1,8 @@
 const assert = require("assert");
 const { planAnimationSections, plannedAnimationCount } = require("./voice-animation-planner.cjs");
 const {
+  animationIntentForCue,
+  animationMatchesIntent,
   animationMatchesSlot,
   chooseCueEvent,
   eventLabel,
@@ -78,5 +80,37 @@ assert.deepEqual(soundDescription("GuardianGIDeployedAttack", "weapon"), {
   original: "<Rocket launcher fire>",
   translated: "<火箭筒开火声>",
 });
+
+const intentFor = (assetName, slot, eventName, original, options = {}) => animationIntentForCue({
+  assetName,
+  slot,
+  eventName,
+  original,
+}, options);
+assert.equal(intentFor("igimod.wav", "move", "GIMove", "Double time!").key, "walk");
+assert.equal(intentFor("igiat2a.wav", "weapon", "GIAttackDeployed", "<Deployed rifle fire>").key, "deployedfire");
+assert.equal(intentFor("igiat1a.wav", "weapon", "GIAttack", "<Rifle fire>").key, "fireup");
+assert.equal(intentFor("igiate.wav", "attack", "GIAttackCommand", "Diggin' in!").key, "deploy");
+assert.equal(intentFor("gdefuse.wav", "defuse", "DefuseKit", "<Defusing sound>").key, "idle1+idle2");
+assert.equal(intentFor("iseamoc.wav", "move", "SEALMove", "How about a swim?", { amphibious: true }).key, "swim");
+assert.equal(intentFor("itapmoc.wav", "move", "TanyaMove", "Let's get to it", { amphibious: true }).key, "walk");
+assert.equal(intentFor("igifea.wav", "feedback", "GIFear", "<Fear sound>").key, "crawl");
+assert.equal(intentFor("isniatta.wav", "attack", "SniperAttackCommand", "Give me a target").key, "fireprone");
+assert.equal(intentFor("ilasdia.wav", "die", "LunarDie", "<Death cry>", { flying: true }).key, "airdeathstart+airdeathfinish");
+assert.ok(animationMatchesIntent({ sequenceNames: ["deployedfire"] }, "deployedfire"));
+assert.ok(!animationMatchesIntent({ sequenceNames: ["deployedfire"] }, "fireup"));
+
+const fineSections = planAnimationSections([
+  { assetId: "move-run", slot: "move", eventName: "Move", animationIntent: { key: "walk" } },
+  { assetId: "move-crawl", slot: "move", eventName: "Move", animationIntent: { key: "crawl" } },
+], {
+  unitId: "TEST",
+  getCandidates: (section) => section.key.endsWith("crawl")
+    ? [candidate("crawl", "low")]
+    : [candidate("walk")],
+  getTransition: (from, to) => from === to ? null : { event: "down", frames: ["down-1", "down-2"], intervalMs: 90 },
+});
+assert.deepEqual(fineSections.map((cue) => cue.animation.sequenceId), ["walk", "crawl"]);
+assert.deepEqual(fineSections[1].animation.transitionEvents, ["down"]);
 
 console.log("voice animation planner: passed");

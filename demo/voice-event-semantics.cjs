@@ -66,6 +66,70 @@ const WEAPON_SOUND_DESCRIPTIONS = new Map([
   ["guardiangideployedattack", { original: "<Rocket launcher fire>", translated: "<火箭筒开火声>" }],
 ]);
 
+const CUE_ANIMATION_OVERRIDES = new Map([
+  ["igiate", ["deploy"]],
+  ["igifea", ["crawl"]],
+  ["ienafec", ["crawl"]],
+  ["iggifee", ["crawl"]],
+  ["iggifef", ["crawl"]],
+  ["isnimoc", ["crawl"]],
+  ["isnimod", ["crawl"]],
+  ["isnimoe", ["crawl"]],
+  ["isniatb", ["fireprone"]],
+  ["isniatc", ["fireprone"]],
+  ["isniatta", ["fireprone"]],
+]);
+
+function cueStem(assetName) {
+  return String(assetName || "").replace(/\.[^.]+$/, "").toLowerCase();
+}
+
+function animationIntent(sequenceNames) {
+  return {
+    key: sequenceNames.join("+"),
+    sequenceNames,
+  };
+}
+
+function animationIntentForCue(cue, options = {}) {
+  const slot = String(cue.slot || "select");
+  const eventName = String(cue.eventName || "");
+  const original = String(cue.original || "");
+  const exact = CUE_ANIMATION_OVERRIDES.get(cueStem(cue.assetName));
+  if (exact) return animationIntent(exact);
+
+  if (slot === "die" && options.flying) return animationIntent(["airdeathstart+airdeathfinish"]);
+  if (slot === "die") return animationIntent(["die1", "die2", "death", "tumble"]);
+  if (slot === "create") return animationIntent(["cheer"]);
+  if (slot === "select") return animationIntent(["idle1", "idle2", "ready", "guard"]);
+  if (slot === "move") {
+    if (options.flying) return animationIntent(["fly"]);
+    if (options.amphibious && /\bswim\b/i.test(original)) return animationIntent(["swim"]);
+    return animationIntent(["walk"]);
+  }
+  if (["enter", "capture", "infiltrate"].includes(slot)) {
+    return animationIntent(["walk"]);
+  }
+  if (slot === "defuse") return animationIntent(["idle1", "idle2"]);
+  if (slot === "disguise") return animationIntent(["idle1", "idle2"]);
+  if (slot === "deploy") return animationIntent(["deploy"]);
+  if (slot === "feedback") return animationIntent(["panic"]);
+  if (["attack", "weapon", "special_attack"].includes(slot)) {
+    if (options.flying) return animationIntent(["firefly"]);
+    if (options.explosive) return animationIntent(["deploy"]);
+    if (/deploy/i.test(eventName)) return animationIntent(["deployedfire"]);
+    if (/\bdiggin['’]?\s+in\b/i.test(original)) return animationIntent(["deployedfire"]);
+    return animationIntent(["fireup"]);
+  }
+  if (slot === "harvest") return animationIntent(["work", "harvest", "walk"]);
+  return animationIntent(["idle1", "idle2", "ready", "guard"]);
+}
+
+function animationMatchesIntent(intent, animationEvent) {
+  const event = String(animationEvent || "").toLowerCase();
+  return (intent?.sequenceNames || []).some((name) => String(name).toLowerCase() === event);
+}
+
 function inferredSlotFromAssetName(assetName) {
   const stem = String(assetName || "").replace(/\.[^.]+$/, "");
   return ASSET_SLOT_PATTERNS.find(([expression]) => expression.test(stem))?.[1] || "";
@@ -192,7 +256,9 @@ function animationMatchesSlot(slot, animationEvent) {
 module.exports = {
   SLOT_ORDER,
   SLOT_LABELS,
+  animationIntentForCue,
   animationMatchesSlot,
+  animationMatchesIntent,
   chooseCueEvent,
   eventLabel,
   inferredSlotFromAssetName,
