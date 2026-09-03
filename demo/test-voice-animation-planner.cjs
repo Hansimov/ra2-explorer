@@ -88,17 +88,31 @@ const intentFor = (assetName, slot, eventName, original, options = {}) => animat
   original,
 }, options);
 assert.equal(intentFor("igimod.wav", "move", "GIMove", "Double time!").key, "walk");
+assert.equal(intentFor("igimof.wav", "move", "GIMove", "Hooah!").key, "cheer");
 assert.equal(intentFor("igiat2a.wav", "weapon", "GIAttackDeployed", "<Deployed rifle fire>").key, "deployedfire");
 assert.equal(intentFor("igiat1a.wav", "weapon", "GIAttack", "<Rifle fire>").key, "fireup");
 assert.equal(intentFor("igiate.wav", "attack", "GIAttackCommand", "Diggin' in!").key, "deploy");
-assert.equal(intentFor("gdefuse.wav", "defuse", "DefuseKit", "<Defusing sound>").key, "idle1+idle2");
+assert.equal(intentFor("ienaata.wav", "capture", "EngAllAttackCommand", "Analyzing schematics.", { unitId: "ENGINEER" }).key, "idle2");
+assert.equal(intentFor("ienaatb.wav", "capture", "EngAllAttackCommand", "Studying blue prints.", { unitId: "ENGINEER" }).key, "idle2");
+assert.equal(intentFor("ienaatc.wav", "capture", "EngAllAttackCommand", "Got the plans right here.", { unitId: "ENGINEER" }).key, "idle2");
+assert.equal(intentFor("gdefuse.wav", "defuse", "DefuseKit", "<Defusing sound>", { unitId: "ENGINEER" }).key, "idle2");
 assert.equal(intentFor("iseamoc.wav", "move", "SEALMove", "How about a swim?", { amphibious: true }).key, "swim");
 assert.equal(intentFor("itapmoc.wav", "move", "TanyaMove", "Let's get to it", { amphibious: true }).key, "walk");
-assert.equal(intentFor("igifea.wav", "feedback", "GIFear", "<Fear sound>").key, "crawl");
+assert.equal(intentFor("iseamoa.wav", "move", "SealMove", "Hoorah!").key, "cheer");
+assert.equal(intentFor("itapatb.wav", "attack", "TanyaPrimeAttackCommand", "Yee Haw").key, "cheer");
+assert.equal(intentFor("igifea.wav", "feedback", "GIFear", "<Fear sound>").key, "crawl>panic");
+assert.equal(intentFor("ichrfea.wav", "feedback", "ChronoLegionFear", "Cover me!").key, "crawl>panic");
+assert.equal(intentFor("irocfea.wav", "feedback", "RocketeerFear", "I'm losing compression!", { flying: true }).key, "fly");
+assert.equal(intentFor("irocsea.wav", "select", "RocketeerSelect", "Rockets in the sky.", { flying: true }).key, "fly");
 assert.equal(intentFor("isniatta.wav", "attack", "SniperAttackCommand", "Give me a target").key, "fireprone");
 assert.equal(intentFor("ilasdia.wav", "die", "LunarDie", "<Death cry>", { flying: true }).key, "airdeathstart+airdeathfinish");
 assert.ok(animationMatchesIntent({ sequenceNames: ["deployedfire"] }, "deployedfire"));
 assert.ok(!animationMatchesIntent({ sequenceNames: ["deployedfire"] }, "fireup"));
+assert.ok(animationMatchesSlot("capture", "idle2"));
+assert.ok(animationMatchesSlot("feedback", "fly"));
+assert.ok(animationMatchesSlot("select", "fly"));
+assert.ok(animationMatchesSlot("move", "cheer"));
+assert.ok(animationMatchesSlot("attack", "cheer"));
 
 const fineSections = planAnimationSections([
   { assetId: "move-run", slot: "move", eventName: "Move", animationIntent: { key: "walk" } },

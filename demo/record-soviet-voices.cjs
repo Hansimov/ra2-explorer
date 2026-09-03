@@ -167,6 +167,13 @@ function sequenceCandidatesForSlot(visual, slot, unitId, eventName, intent) {
   const sequences = (visual.sequences || [])
     .filter((sequence) => validSequence(visual, sequence) && loopableSequence(sequence, slot));
   if (intent?.sequenceNames?.length) {
+    if (intent.selectionMode === "first-available") {
+      for (const name of intent.sequenceNames) {
+        const intended = sequences.filter((candidate) => sequenceNamed(candidate, [name]));
+        if (intended.length) return intended;
+      }
+      return [];
+    }
     const intended = [];
     const intendedKeys = new Set();
     for (const name of intent.sequenceNames) {
@@ -225,10 +232,14 @@ function animationPosture(event) {
   return /crawl|prone|die|death|tumble|deploy/i.test(String(event)) ? "low" : "normal";
 }
 
-function semanticAnimationEvent(sequence, slot) {
+function semanticAnimationEvent(sequence, slot, intent) {
+  const values = [sequence.event, ...(sequence.aliases || [])];
+  const intended = (intent?.sequenceNames || []).find((name) => (
+    values.some((value) => String(value).toLowerCase() === String(name).toLowerCase())
+  ));
+  if (intended) return intended;
   if (slot === "feedback") {
-    const values = [sequence.event, ...(sequence.aliases || [])];
-    for (const preferred of ["panic", "crawl", "hit", "fear"]) {
+    for (const preferred of ["crawl", "panic", "hit", "fear"]) {
       const matched = values.find((value) => String(value).toLowerCase() === preferred);
       if (matched) return matched;
     }
@@ -238,8 +249,8 @@ function semanticAnimationEvent(sequence, slot) {
     || sequence.event;
 }
 
-function sequenceDescriptor(visual, sequence, slot) {
-  const event = semanticAnimationEvent(sequence, slot);
+function sequenceDescriptor(visual, sequence, slot, intent) {
+  const event = semanticAnimationEvent(sequence, slot, intent);
   return {
     event,
     frames: sequenceFrames(visual, sequence),
@@ -271,7 +282,7 @@ function animationCandidates(group, section, sourceId) {
     group.representative.id,
     cue.eventName,
     cue.animationIntent,
-  ).map((sequence) => sequenceDescriptor(visual, sequence, slot));
+  ).map((sequence) => sequenceDescriptor(visual, sequence, slot, cue.animationIntent));
   if (slot === "die" && PROFILE.flyingUnits.includes(group.representative.id)) {
     const airDeath = ["airdeathstart", "airdeathfinish"]
       .map((name) => (visual.sequences || []).find((sequence) => (
@@ -331,6 +342,7 @@ function prepareGroups(groups, sourceId, cameoPaletteId) {
           amphibious: PROFILE.amphibiousUnits.includes(group.representative.id),
           explosive: PROFILE.explosiveUnits.includes(group.representative.id),
           flying: PROFILE.flyingUnits.includes(group.representative.id),
+          unitId: group.representative.id,
         }),
       };
     });

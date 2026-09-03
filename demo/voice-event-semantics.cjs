@@ -68,26 +68,31 @@ const WEAPON_SOUND_DESCRIPTIONS = new Map([
 
 const CUE_ANIMATION_OVERRIDES = new Map([
   ["igiate", ["deploy"]],
-  ["igifea", ["crawl"]],
-  ["ienafec", ["crawl"]],
-  ["iggifee", ["crawl"]],
-  ["iggifef", ["crawl"]],
+  ["igimof", ["cheer"]],
+  ["engineer:ienaata", ["idle2"]],
+  ["engineer:ienaatb", ["idle2"]],
+  ["engineer:ienaatc", ["idle2"]],
+  ["engineer:gdefuse", ["idle2"]],
   ["isnimoc", ["crawl"]],
   ["isnimod", ["crawl"]],
   ["isnimoe", ["crawl"]],
   ["isniatb", ["fireprone"]],
   ["isniatc", ["fireprone"]],
   ["isniatta", ["fireprone"]],
+  ["iseamoa", ["cheer"]],
+  ["itapatb", ["cheer"]],
+  ["itapatc", ["cheer"]],
 ]);
 
 function cueStem(assetName) {
   return String(assetName || "").replace(/\.[^.]+$/, "").toLowerCase();
 }
 
-function animationIntent(sequenceNames) {
+function animationIntent(sequenceNames, selectionMode = "all") {
   return {
-    key: sequenceNames.join("+"),
+    key: sequenceNames.join(selectionMode === "first-available" ? ">" : "+"),
     sequenceNames,
+    selectionMode,
   };
 }
 
@@ -95,13 +100,19 @@ function animationIntentForCue(cue, options = {}) {
   const slot = String(cue.slot || "select");
   const eventName = String(cue.eventName || "");
   const original = String(cue.original || "");
-  const exact = CUE_ANIMATION_OVERRIDES.get(cueStem(cue.assetName));
+  const unitId = String(options.unitId || "").toLowerCase();
+  const stem = cueStem(cue.assetName);
+  const exact = CUE_ANIMATION_OVERRIDES.get(`${unitId}:${stem}`)
+    || CUE_ANIMATION_OVERRIDES.get(stem);
   if (exact) return animationIntent(exact);
 
   if (slot === "die" && options.flying) return animationIntent(["airdeathstart+airdeathfinish"]);
   if (slot === "die") return animationIntent(["die1", "die2", "death", "tumble"]);
   if (slot === "create") return animationIntent(["cheer"]);
-  if (slot === "select") return animationIntent(["idle1", "idle2", "ready", "guard"]);
+  if (slot === "select") {
+    if (options.flying) return animationIntent(["fly"]);
+    return animationIntent(["idle1", "idle2", "ready", "guard"]);
+  }
   if (slot === "move") {
     if (options.flying) return animationIntent(["fly"]);
     if (options.amphibious && /\bswim\b/i.test(original)) return animationIntent(["swim"]);
@@ -113,7 +124,10 @@ function animationIntentForCue(cue, options = {}) {
   if (slot === "defuse") return animationIntent(["idle1", "idle2"]);
   if (slot === "disguise") return animationIntent(["idle1", "idle2"]);
   if (slot === "deploy") return animationIntent(["deploy"]);
-  if (slot === "feedback") return animationIntent(["panic"]);
+  if (slot === "feedback") {
+    if (options.flying) return animationIntent(["fly"]);
+    return animationIntent(["crawl", "panic"], "first-available");
+  }
   if (["attack", "weapon", "special_attack"].includes(slot)) {
     if (options.flying) return animationIntent(["firefly"]);
     if (options.explosive) return animationIntent(["deploy"]);
@@ -235,19 +249,19 @@ function alignTranslationPunctuation(original, translation) {
 function animationMatchesSlot(slot, animationEvent) {
   const patterns = {
     create: /cheer|idle|ready|guard/i,
-    select: /idle|ready|guard|cheer/i,
-    move: /walk|fly|swim|move|crawl/i,
+    select: /idle|ready|guard|cheer|fly|hover/i,
+    move: /walk|fly|swim|move|crawl|cheer/i,
     enter: /walk|enter/i,
-    capture: /walk|capture|deploy/i,
+    capture: /walk|capture|deploy|idle|ready|guard/i,
     deploy: /deploy|crawl|idle/i,
     disguise: /walk|idle|ready|guard/i,
     infiltrate: /walk|enter|idle|ready|guard/i,
     defuse: /deploy|walk|capture|idle/i,
     harvest: /work|harvest|walk/i,
-    attack: /fire|attack|shoot|deploy/i,
+    attack: /fire|attack|shoot|deploy|cheer/i,
     weapon: /fire|attack|shoot|deploy/i,
     special_attack: /deploy|fire|attack|shoot/i,
-    feedback: /crawl|panic|hit|fear/i,
+    feedback: /crawl|panic|hit|fear|fly|hover/i,
     die: /die|death|tumble/i,
   };
   return (patterns[slot] || /preview|idle/i).test(String(animationEvent || ""));
