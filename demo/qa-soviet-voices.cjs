@@ -94,12 +94,14 @@ for (const segment of showcase.segments || []) {
     const weaponTiers = groupCues.filter((cue) => cue.slot === "weapon").map((cue) => cue.weaponTier);
     const layout = segment.visualLayouts?.[group.id];
     const animationSequences = new Set(groupCues.map((cue) => cue.animationSequence));
-    check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Math.abs(Number(layout?.displaySpan) - targetSpan) <= 1, layout);
+    check(`${segment.id}/${group.id}: 主体尺度独立于整帧环境`, Math.abs(
+      Number(layout?.displaySpan) / Number(layout?.visualScale || 1) - targetSpan,
+    ) <= 1, layout);
     check(`${segment.id}/${group.id}: 主体锚点有效`, [layout?.anchorX, layout?.anchorY, layout?.scale].every(Number.isFinite), layout);
     check(`${segment.id}/${group.id}: 非人形单位采用横向尺度`, !PROFILE.horizontalScaleUnits.includes(group.id)
       || layout?.basis === "width", layout);
     check(`${segment.id}/${group.id}: 透明主体画布可跨入顶部区域`, Number(layout?.headerOverlap) === Number(CONFIG.visual.subjectHeaderOverlap), layout);
-    check(`${segment.id}/${group.id}: 完整源帧上沿不被画布裁切`, Number(layout?.sourceTopAtLowPosture) >= -1, layout);
+    check(`${segment.id}/${group.id}: 不透明主体上沿不被画布裁切`, Number(layout?.visibleTopAtLowPosture) >= -1, layout);
     check(`${segment.id}/${group.id}: 事件顺序符合游戏流程`, slotOrder.every((value, index) => index === 0 || value >= slotOrder[index - 1]), slotOrder);
     check(`${segment.id}/${group.id}: 精英武器声音位于普通武器之后`, weaponTiers.every((tier, index) => (
       index === 0 || weaponTiers[index - 1] !== "elite" || tier === "elite"

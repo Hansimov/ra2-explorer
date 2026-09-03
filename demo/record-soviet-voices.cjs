@@ -455,17 +455,22 @@ function presentationHtml() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
     :root{color-scheme:dark;font-family:"Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;background:#080a0d;color:#f5f6f8}
     *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden}body{background:radial-gradient(circle at 50% 22%,#27292e 0,#121419 42%,#080a0d 78%)}
-    .shell{position:relative;display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{position:relative;z-index:2;display:grid;place-items:center;padding:16px 24px 8px;overflow:visible}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current-label{position:relative;max-width:100%}.unit-current strong{display:block;max-width:100%;overflow:hidden;color:${colors.primary};font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px ${colors.primaryShadow}}
-    .content{position:relative;z-index:1;display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,${colors.glow},rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:40px;left:40px;z-index:6;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;top:calc(100% + ${eventGapBelowName}px);left:50%;z-index:4;display:flex;align-items:center;justify-content:center;transform:translateX(-50%);transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:${colors.event};font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52);white-space:nowrap}.event i{display:none}
+    .shell{position:relative;display:grid;grid-template-rows:500px minmax(0,1fr) 64px;width:100%;height:100%;transition:opacity .28s ease}.carousel{position:relative;z-index:2;display:grid;place-items:center;padding:16px 24px 8px;overflow:visible}.unit-track{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);align-items:end;gap:14px;width:100%;height:350px}.unit-peek,.unit-current{display:grid;grid-template-rows:auto auto;align-content:end;justify-items:center;min-width:0;text-align:center;transition:opacity .25s ease,transform .25s ease}.unit-peek{opacity:.22;transform:scale(.82);color:#a7adb7}.unit-peek img{visibility:hidden;width:129px;height:102px;margin-bottom:24px;object-fit:contain;image-rendering:pixelated}.unit-peek strong{max-width:100%;overflow:hidden;font-size:36px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}.unit-current{position:relative;padding:4px 16px}.unit-current img{visibility:hidden;width:225px;height:177px;margin-bottom:40px;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 12px 25px rgba(0,0,0,.58))}.unit-current-label{position:relative;width:100%;max-width:100%}.unit-current strong{display:block;max-width:100%;overflow:hidden;color:${colors.primary};font-size:78px;line-height:1.06;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 8px 32px ${colors.primaryShadow}}
+    .content{position:relative;z-index:1;display:grid;grid-template-rows:minmax(0,1fr) 440px;min-height:0;padding:0 40px 14px}.panel{min-height:0}.visual{position:relative;overflow:visible;background:radial-gradient(circle at 50% 66%,${colors.glow},rgba(20,23,28,.16) 42%,transparent 76%)}.visual:before{position:absolute;inset:0;content:"";opacity:.1;background:repeating-linear-gradient(0deg,transparent 0,transparent 4px,rgba(255,255,255,.022) 5px);pointer-events:none}.stage-frame{position:absolute;top:${subjectStageTop}px;right:40px;left:40px;z-index:6;height:${subjectCanvasHeight}px;pointer-events:none}.subject{width:100%;height:100%;background:transparent;image-rendering:pixelated;filter:drop-shadow(0 28px 25px rgba(0,0,0,.62));transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1);transform-origin:center;will-change:opacity,transform}.voice-head{position:absolute;top:470px;left:50%;z-index:4;display:flex;align-items:center;justify-content:center;transform:translateX(-50%);transition:opacity ${unitFadeSeconds}s ease}.event{display:inline-flex;align-items:center;color:${colors.event};font-size:44px;font-weight:700;line-height:1.1;letter-spacing:.035em;text-shadow:0 5px 18px rgba(0,0,0,.52);white-space:nowrap}.event i{display:none}
     .voice{position:relative;z-index:2;display:grid;overflow:visible;padding:0 42px 18px;transition:opacity ${unitFadeSeconds}s ease}.transcript{display:grid;align-content:start;justify-items:center;gap:28px;min-height:0;padding:30px 4px 0}.text-block{display:block;width:100%;text-align:center}.original,.localized{margin:0 auto;overflow-wrap:anywhere;text-align:center;text-wrap:balance}.original{display:inline-block;max-width:none;color:${colors.primary};font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:66px;font-weight:670;line-height:1.24;letter-spacing:0;white-space:nowrap;text-shadow:0 8px 28px ${colors.textShadow}}.localized{max-width:980px;color:${colors.secondary};font-size:58px;font-weight:590;line-height:1.34}.text-block.hidden{display:none}
     .progress-shell{display:grid;align-items:center;padding:0 46px 24px}.progress{height:8px;overflow:hidden;border-radius:99px;background:#292e35;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}.progress b{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,${colors.accentStart},${colors.accentEnd});transition:width .22s ease}
     .transition{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#292b30 0,#121419 48%,#080a0d 100%);opacity:0;pointer-events:none;transition:opacity .42s ease}.transition.instant{transition:none}.transition.visible{opacity:1}.transition-card{width:960px;padding:56px 34px;text-align:center}.transition-card small{display:block;color:${colors.secondary};font-size:42px;font-weight:700;letter-spacing:.07em}.transition-card small:empty{display:none}.transition-card h2{margin:34px 0 0;color:${colors.primary};font-size:98px;line-height:1.2;text-shadow:0 14px 42px ${colors.titleShadow}}.transition-card p{display:none}.transition-card .site{margin-top:50px;color:${colors.event};font-family:"Segoe UI",sans-serif;font-size:34px;font-weight:600}
     .unit-track{transition:opacity ${unitFadeSeconds}s ease,transform ${unitSlideSeconds}s cubic-bezier(.22,.7,.22,1),filter ${unitFadeSeconds}s ease;will-change:opacity,transform,filter}.unit-leaving .unit-track{opacity:0;transform:translateX(-110px) scale(.965);filter:blur(3px)}.unit-entering .unit-track{opacity:0;transform:translateX(110px) scale(.965);filter:blur(3px)}.unit-leaving .subject{opacity:0;transform:translateX(-54px) scale(.985)}.unit-entering .subject{opacity:0;transform:translateX(54px) scale(.985)}.unit-leaving .voice-head,.unit-leaving .voice,.unit-entering .voice-head,.unit-entering .voice{opacity:0}
-  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><div class="unit-current-label"><strong></strong><div class="voice-head"><span class="event"><i></i><b></b></span></div></div></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><main class="content"><section class="panel visual"></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
+  </style></head><body><div class="shell"><header class="carousel"><div class="unit-track"><div class="unit-peek previous"><img alt=""><strong></strong></div><div class="unit-current"><img alt=""><div class="unit-current-label"><strong></strong></div></div><div class="unit-peek next"><img alt=""><strong></strong></div></div></header><div class="voice-head"><span class="event"><i></i><b></b></span></div><main class="content"><section class="panel visual"></section><section class="panel voice"><div class="transcript"><div class="text-block original-block"><p class="original"></p></div><div class="text-block localized-block"><p class="localized"></p></div></div></section></main><div class="stage-frame"><canvas class="subject" width="1000" height="${subjectCanvasHeight}" aria-label="单位动画"></canvas></div><footer class="progress-shell"><div class="progress"><b></b></div></footer></div><div class="transition"><div class="transition-card"><small></small><h2></h2><p></p><div class="site"></div></div></div><audio id="voice-audio" preload="auto"></audio><script>
     window.__voiceTimer = 0;
     window.__voiceRunId = '';
     window.__voiceFrames = {};
     window.__voiceLayouts = {};
+    window.__positionVoiceHead = () => {
+      const unitName = document.querySelector('.unit-current strong');
+      const voiceHead = document.querySelector('.voice-head');
+      voiceHead.style.top = (unitName.getBoundingClientRect().bottom + ${eventGapBelowName}) + 'px';
+    };
     window.__animationPlacement = (animationChanged) => {
       const unitName = document.querySelector('.unit-current strong');
       const voiceHead = document.querySelector('.voice-head');
@@ -503,7 +508,7 @@ function presentationHtml() {
       const intro = (animation.introFrames || []).map((src) => window.__voiceFrames[src]).filter(Boolean);
       const loop = (animation.loopFrames || animation.frames || []).map((src) => window.__voiceFrames[src]).filter(Boolean);
       const scale = layout.scale;
-      const baseline = animation.posture === 'low' ? ${lowBaseline} : ${normalBaseline};
+      const baseline = (animation.posture === 'low' ? ${lowBaseline} : ${normalBaseline}) + (layout.verticalOffset || 0);
       const drawLeft = canvas.width / 2 - layout.anchorX * scale;
       const drawTop = baseline - layout.anchorY * scale;
       let phase = intro.length ? 'intro' : 'loop';
@@ -568,6 +573,7 @@ async function installPresentation(page, kind, groups) {
   const frameGroups = groups.map((group) => ({
     unitId: group.representative.id,
     referenceFrames: stableSubjectReferenceFrames(group),
+    allFrames: [...new Set(group.cues.flatMap((cue) => cue.animation.frames).filter(Boolean))],
   }));
   const urls = [...new Set(groups.flatMap((group) => [
     group.cameoUrl,
@@ -586,9 +592,10 @@ async function installPresentation(page, kind, groups) {
   const lowBaseline = SUBJECT_BASELINE_LOW + SUBJECT_HEADER_OVERLAP;
   const scaleReferenceUnit = PROFILE.scaleReferenceUnit;
   const horizontalScaleUnits = PROFILE.horizontalScaleUnits;
+  const visualScaleByUnit = PROFILE.visualScaleByUnit;
   const visualAudit = await page.evaluate(async ({
     values, frameGroups, animations, targetSpan, headerOverlap, lowBaseline,
-    scaleReferenceUnit, horizontalScaleUnits,
+    scaleReferenceUnit, horizontalScaleUnits, visualScaleByUnit,
   }) => {
     const records = {};
     await Promise.all(values.map((src) => new Promise((resolve, reject) => {
@@ -669,6 +676,9 @@ async function installPresentation(page, kind, groups) {
       const references = [...new Set(group.referenceFrames)]
         .map((src) => ({ src, bounds: boundsFor(src) }))
         .filter((sample) => sample.bounds);
+      const visibleBounds = [...new Set(group.allFrames)]
+        .map((src) => boundsFor(src))
+        .filter(Boolean);
       return {
         unitId: group.unitId,
         references,
@@ -676,6 +686,7 @@ async function installPresentation(page, kind, groups) {
         referenceWidth: quantile(references.map((sample) => sample.bounds.width), 0.7),
         anchorX: median(references.map((sample) => (sample.bounds.left + sample.bounds.right) / 2)),
         anchorY: median(references.map((sample) => sample.bounds.bottom)),
+        visibleTop: Math.min(...visibleBounds.map((bounds) => bounds.top)),
       };
     });
     const scaleReference = samples.find((sample) => sample.unitId === scaleReferenceUnit);
@@ -684,9 +695,14 @@ async function installPresentation(page, kind, groups) {
     for (const sample of samples) {
       const horizontalScale = horizontalScaleUnits.includes(sample.unitId);
       const dimension = horizontalScale ? sample.referenceWidth : sample.referenceHeight;
-      const scale = Math.min(4.2, Math.max(1.8, targetSpan / Math.max(1, dimension)));
+      const visualScale = Number(visualScaleByUnit[sample.unitId]) || 1;
+      const scale = Math.min(4.4, Math.max(1.6, targetSpan / Math.max(1, dimension) * visualScale));
+      const visibleTopAtLowPosture = lowBaseline - sample.anchorY * scale + sample.visibleTop * scale;
+      const verticalOffset = Math.max(0, 12 - visibleTopAtLowPosture);
       layouts[sample.unitId] = {
         scale,
+        visualScale,
+        verticalOffset,
         anchorX: sample.anchorX,
         anchorY: sample.anchorY,
         referenceHeight: sample.referenceHeight,
@@ -696,6 +712,7 @@ async function installPresentation(page, kind, groups) {
         targetUnit: scaleReference?.unitId || scaleReferenceUnit,
         headerOverlap,
         sourceTopAtLowPosture: lowBaseline - sample.anchorY * scale,
+        visibleTopAtLowPosture: visibleTopAtLowPosture + verticalOffset,
       };
     }
     const animationMotion = Object.fromEntries(animations.map((animation) => {
@@ -734,6 +751,7 @@ async function installPresentation(page, kind, groups) {
     lowBaseline,
     scaleReferenceUnit,
     horizontalScaleUnits,
+    visualScaleByUnit,
   });
   const { visualLayouts } = visualAudit;
   console.log(`[visual] 以${PROFILE.scaleReferenceLabel}为主体尺度基准 ${Object.entries(visualLayouts).map(([id, layout]) => `${id}:${layout.scale.toFixed(2)}x/${layout.displaySpan.toFixed(0)}px`).join(" ")}`);
@@ -837,6 +855,7 @@ async function showUnit(page, groups, groupIndex) {
     (Number(CONFIG.visual.unitSlideSeconds) || 0.56) * 1000,
     totalMs - leaveMs - stageMs,
   ));
+  await page.evaluate(() => window.__positionVoiceHead());
 }
 
 async function showCue(page, group, cue, cueIndex, segmentCueIndex, totalCues) {
