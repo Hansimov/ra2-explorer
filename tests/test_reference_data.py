@@ -169,7 +169,7 @@ def test_bundled_translation_terminal_punctuation_follows_original(tmp_path) -> 
 def test_bundled_unit_voice_translation_catalog_is_well_formed() -> None:
     payload = json.loads(BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH.read_text(encoding="utf-8"))
 
-    assert len(payload["entries"]) == 417
+    assert len(payload["entries"]) == 1268
     assert all(entry.get("translated_text") for entry in payload["entries"].values())
     for entry in payload["entries"].values():
         text = entry["translated_text"]
@@ -186,6 +186,18 @@ def test_bundled_unit_voice_translation_catalog_is_well_formed() -> None:
     assert payload["entries"]["iborcre"]["translated_text"] == "你不是鲍里斯的对手。"
     assert payload["entries"]["igiate"]["translated_text"] == "就地固守！"
     assert payload["entries"]["irocseg"]["translated_text"] == "燃料箱已加满"
+    assert payload["entries"]["ibrusea"]["translated_text"] == "嗯？"
+    assert payload["entries"]["iflafea"]["translated_text"] == "穿不过这片弹幕。"
+    assert payload["entries"]["irommoe"]["translated_text"] == "这双靴子太紧了"
+    assert payload["entries"]["vchosea"]["translated_text"] == "武装直升机报到"
+    assert payload["entries"]["vintate"]["translated_text"] == "仪器已锁定目标。"
+    assert payload["entries"]["vmasmod"]["translated_text"] == "那些傻瓜在哪里？"
+    assert payload["entries"]["isl2see"] == {
+        "translated_text": "<叹气>",
+        "translation_kind": "nonverbal",
+    }
+    assert payload["entries"]["vbatseb"]["translated_text"] == "战斗要塞进入戒备"
+    assert payload["entries"]["vwassec"]["translated_text"] == "是，指挥官？"
     assert payload["entries"]["ienafec"] == {
         "translated_text": "<惊恐声>",
         "translation_kind": "nonverbal",

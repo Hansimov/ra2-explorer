@@ -89,6 +89,16 @@ def translation_format_violations(entries: dict[str, dict[str, Any]]) -> list[di
     return violations
 
 
+def missing_translations_for_original(
+    entries: dict[str, dict[str, Any]],
+) -> list[str]:
+    return [
+        stem
+        for stem, entry in entries.items()
+        if entry["original_texts"] and not entry["translated_texts"]
+    ]
+
+
 def collect_unit_voice_inventory(base_url: str, source_id: str) -> dict[str, Any]:
     entity_page = _request_json(
         base_url, "/api/entities", {"source_id": source_id, "limit": "1000"}
@@ -173,6 +183,7 @@ def collect_unit_voice_inventory(base_url: str, source_id: str) -> dict[str, Any
 
     missing_original = [stem for stem, entry in entries.items() if not entry["original_texts"]]
     missing_translation = [stem for stem, entry in entries.items() if not entry["translated_texts"]]
+    missing_translation_for_original = missing_translations_for_original(entries)
     conflicting_original = [
         stem for stem, entry in entries.items() if len(entry["original_texts"]) > 1
     ]
@@ -188,6 +199,7 @@ def collect_unit_voice_inventory(base_url: str, source_id: str) -> dict[str, Any
                 bool(entry["localized_texts"]) for entry in entries.values()
             ),
             "with_editorial_translation": len(entries) - len(missing_translation),
+            "missing_translation_for_original": len(missing_translation_for_original),
             "translation_format_violation_count": len(format_violations),
             "by_kind": {key: len(value) for key, value in sorted(by_kind.items())},
             "by_affiliation": {key: len(value) for key, value in sorted(by_affiliation.items())},
@@ -195,6 +207,7 @@ def collect_unit_voice_inventory(base_url: str, source_id: str) -> dict[str, Any
         },
         "missing_original": missing_original,
         "missing_translation": missing_translation,
+        "missing_translation_for_original": missing_translation_for_original,
         "conflicting_original": conflicting_original,
         "translation_format_violations": format_violations,
         "entries": entries,
@@ -213,6 +226,14 @@ def main() -> None:
         "--fail-on-format-issues",
         action="store_true",
         help="Exit unsuccessfully when dialogue/cue bracket formatting is inconsistent.",
+    )
+    parser.add_argument(
+        "--fail-on-missing-original-translations",
+        action="store_true",
+        help=(
+            "Exit unsuccessfully when a unit-linked voice has original text "
+            "but no editorial translation."
+        ),
     )
     args = parser.parse_args()
 
@@ -269,6 +290,11 @@ def main() -> None:
                 )
 
     if args.fail_on_format_issues and payload["translation_format_violations"]:
+        raise SystemExit(1)
+    if (
+        args.fail_on_missing_original_translations
+        and payload["missing_translation_for_original"]
+    ):
         raise SystemExit(1)
 
 

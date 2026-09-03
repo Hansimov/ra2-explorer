@@ -1,4 +1,7 @@
-from scripts.audit_unit_voice_translations import translation_format_violations
+from scripts.audit_unit_voice_translations import (
+    missing_translations_for_original,
+    translation_format_violations,
+)
 
 
 def _entry(original: str, translation: str) -> dict[str, object]:
@@ -65,3 +68,16 @@ def test_translation_format_rejects_terminal_punctuation_mismatch() -> None:
             "translation": "准备好了！",
         },
     ]
+
+
+def test_missing_translation_gate_only_targets_entries_with_original_text() -> None:
+    entries = {
+        "complete": _entry("Ready.", "准备就绪。"),
+        "missing": {"original_texts": ["Move out!"], "translated_texts": []},
+        "nonverbal_without_original": {
+            "original_texts": [],
+            "translated_texts": ["<机械声>"],
+        },
+    }
+
+    assert missing_translations_for_original(entries) == ["missing"]
