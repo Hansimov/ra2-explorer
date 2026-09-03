@@ -129,8 +129,41 @@ def test_bundled_unit_voice_translation_does_not_replace_original_text(tmp_path)
     )
 
     assert entries["ilasmod"]["original_text"] == "Fuel mix optimal"
-    assert entries["ilasmod"]["translated_text"] == "燃料混合比最佳。"
+    assert entries["ilasmod"]["translated_text"] == "燃料混合比最佳"
     assert "localized_text" not in entries["ilasmod"]
+
+
+def test_bundled_translation_terminal_punctuation_follows_original(tmp_path) -> None:
+    workbook_path = tmp_path / "audio-transcript.xlsx"
+    workbook_path.write_bytes(
+        _audio_transcript_workbook(
+            (
+                ("$plain.wav", "Hold position", "Unit", "Select", "", "Soviet"),
+                ("$question.wav", "Ready?", "Unit", "Select", "", "Soviet"),
+                ("$command.wav", "Move!", "Unit", "Move", "", "Soviet"),
+            )
+        )
+    )
+    supplement_path = tmp_path / "translations.json"
+    supplement_path.write_text(
+        json.dumps(
+            {
+                "entries": {
+                    "plain": {"translated_text": "坚守阵地。"},
+                    "question": {"translated_text": "准备好了。"},
+                    "command": {"translated_text": "行动。"},
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    entries = load_audio_transcript(workbook_path, supplement_paths=(supplement_path,))
+
+    assert entries["plain"]["translated_text"] == "坚守阵地"
+    assert entries["question"]["translated_text"] == "准备好了？"
+    assert entries["command"]["translated_text"] == "行动！"
 
 
 def test_bundled_unit_voice_translation_catalog_is_well_formed() -> None:

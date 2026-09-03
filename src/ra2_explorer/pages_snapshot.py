@@ -41,7 +41,7 @@ from ra2_explorer.errors import Ra2ExplorerError
 
 PAGES_SNAPSHOT_SCHEMA_VERSION = 2
 PAGES_RENDER_REVISION = 9
-PAGES_ASSET_BUNDLE_REVISION = 4
+PAGES_ASSET_BUNDLE_REVISION = 5
 _SAFE_FILENAME = re.compile(r"^[A-Za-z0-9_.~$-]+$")
 _AUDIO_FORMATS = {"aud", "bag_audio", "wav"}
 _MODEL_FORMATS = {"hva", "vxl"}

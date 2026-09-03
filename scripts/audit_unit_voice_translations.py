@@ -12,6 +12,34 @@ from urllib.request import ProxyHandler, build_opener
 
 _ANGLE_CUE_PATTERN = re.compile(r"<[^<>]+>")
 _ASTERISK_CUE_PATTERN = re.compile(r"\*[^*]+\*")
+_TERMINAL_PUNCTUATION_PATTERN = re.compile(r"(?:\.{2,}|…+|[.!?,;:。！？；：，]+)$")
+
+
+def _terminal_punctuation_kind(value: str) -> str:
+    text = value.strip()
+    if not text or _ANGLE_CUE_PATTERN.fullmatch(text):
+        return ""
+    match = _TERMINAL_PUNCTUATION_PATTERN.search(text)
+    if match is None:
+        return ""
+    punctuation = match.group()
+    if any(mark in punctuation for mark in "?？") and any(
+        mark in punctuation for mark in "!！"
+    ):
+        return "question-exclamation"
+    if any(mark in punctuation for mark in "?？"):
+        return "question"
+    if any(mark in punctuation for mark in "!！"):
+        return "exclamation"
+    if "…" in punctuation or punctuation.startswith(".."):
+        return "ellipsis"
+    if any(mark in punctuation for mark in ";；"):
+        return "semicolon"
+    if any(mark in punctuation for mark in ":："):
+        return "colon"
+    if any(mark in punctuation for mark in ",，"):
+        return "comma"
+    return "period"
 
 
 def _request_json(base_url: str, path: str, query: dict[str, str] | None = None) -> Any:
@@ -34,16 +62,30 @@ def translation_format_violations(entries: dict[str, dict[str, Any]]) -> list[di
             for value in originals
         )
         translation_has_cue = any(_ANGLE_CUE_PATTERN.search(value) for value in translations)
-        if source_has_cue == translation_has_cue:
+        if source_has_cue != translation_has_cue:
+            violations.append(
+                {
+                    "stem": stem,
+                    "reason": "missing-cue" if source_has_cue else "unexpected-cue",
+                    "original": " / ".join(originals),
+                    "translation": " / ".join(translations),
+                }
+            )
             continue
-        violations.append(
-            {
-                "stem": stem,
-                "reason": "missing-cue" if source_has_cue else "unexpected-cue",
-                "original": " / ".join(originals),
-                "translation": " / ".join(translations),
-            }
-        )
+        if (
+            len(originals) == 1
+            and len(translations) == 1
+            and _terminal_punctuation_kind(originals[0])
+            != _terminal_punctuation_kind(translations[0])
+        ):
+            violations.append(
+                {
+                    "stem": stem,
+                    "reason": "terminal-punctuation",
+                    "original": originals[0],
+                    "translation": translations[0],
+                }
+            )
     return violations
 
 

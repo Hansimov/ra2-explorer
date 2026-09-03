@@ -28,6 +28,8 @@ AUDIO_TRANSCRIPT_SOURCE_URL = (
 BUNDLED_UNIT_INTEL_TRANSCRIPT_PATH = Path(__file__).with_name("data") / "unit-intel-transcript.json"
 BUNDLED_UNIT_VOICE_TRANSCRIPT_PATH = Path(__file__).with_name("data") / "unit-voice-transcript.json"
 
+_TERMINAL_PUNCTUATION_PATTERN = re.compile(r"(?:\.{2,}|…+|[.!?,;:。！？；：，]+)$")
+
 # The community workbook rotates both retail harvester voice groups by one row.
 # These filename-to-line bindings were verified against the decoded English BAG
 # samples; keep the override in code so a future reference sync cannot restore
@@ -153,6 +155,13 @@ def load_audio_transcript(
         if current is None:
             continue
         entries[file_id] = {**current, "text": text, "original_text": text}
+    for entry in entries.values():
+        original_text = entry.get("original_text") or entry.get("text")
+        translated_text = entry.get("translated_text")
+        if original_text and translated_text:
+            entry["translated_text"] = _align_translation_punctuation(
+                original_text, translated_text
+            )
     return entries
 
 
@@ -205,9 +214,62 @@ def _load_audio_transcript_supplement(path: Path) -> dict[str, dict[str, str]]:
             entry.pop("localized_text", None)
             entry.pop("localized_text_origin", None)
         if has_translated:
-            entry["translated_text"] = translated_text.strip()
+            normalized_translation = translated_text.strip()
+            if has_original:
+                normalized_translation = _align_translation_punctuation(
+                    original_text.strip(), normalized_translation
+                )
+            entry["translated_text"] = normalized_translation
         entries[file_id] = entry
     return entries
+
+
+def _terminal_punctuation_kind(text: str) -> str:
+    value = text.strip()
+    if not value or re.fullmatch(r"<[^<>]+>", value):
+        return ""
+    match = _TERMINAL_PUNCTUATION_PATTERN.search(value)
+    if match is None:
+        return ""
+    punctuation = match.group()
+    if any(mark in punctuation for mark in "?？") and any(
+        mark in punctuation for mark in "!！"
+    ):
+        return "question_exclamation"
+    if any(mark in punctuation for mark in "?？"):
+        return "question"
+    if any(mark in punctuation for mark in "!！"):
+        return "exclamation"
+    if "…" in punctuation or punctuation.startswith(".."):
+        return "ellipsis"
+    if any(mark in punctuation for mark in ";；"):
+        return "semicolon"
+    if any(mark in punctuation for mark in ":："):
+        return "colon"
+    if any(mark in punctuation for mark in ",，"):
+        return "comma"
+    return "period"
+
+
+def _align_translation_punctuation(original: str, translation: str) -> str:
+    source = original.strip()
+    value = translation.strip()
+    if not value:
+        return ""
+    if re.fullmatch(r"<[^<>]+>", source) and re.fullmatch(r"<[^<>]+>", value):
+        return value
+    punctuation = {
+        "question_exclamation": "？！",
+        "question": "？",
+        "exclamation": "！",
+        "ellipsis": "……",
+        "semicolon": "；",
+        "colon": "：",
+        "comma": "，",
+        "period": "。",
+    }.get(_terminal_punctuation_kind(source), "")
+    content = _TERMINAL_PUNCTUATION_PATTERN.sub("", value).rstrip()
+    return f"{content}{punctuation}"
 
 
 def sync_audio_transcript(path: Path, *, timeout: float = 30.0) -> dict[str, object]:

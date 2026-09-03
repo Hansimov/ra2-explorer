@@ -2,110 +2,110 @@
   "schema_version": 1,
   "provider": "github-release",
   "repository": "Hansimov/ra2-explorer",
-  "tag": "pages-data-0.13.1",
+  "tag": "pages-data-0.14.0",
   "asset": "RA2-Explorer-Pages-Data.zip",
   "parts": [
     {
       "name": "RA2-Explorer-Pages-Data.zip.part01",
       "bytes": 8388608,
-      "sha256": "a55e8a7cab670caf25284d6c6fdfcffe3f011557060cc5834526d42b425ee7b3",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part01"
+      "sha256": "1a7f55c28fba2cb55b247c5acfa70b3eff7ee7ebbf7e4bf2339005439e6926be",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part01"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part02",
       "bytes": 8388608,
-      "sha256": "cdba5520323bd86aa40573967206e593cbf5c34fd5d065a7357f791ee05ecb7e",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part02"
+      "sha256": "f8b783ac58b52ea29a8bb82e134040233e931fc49d0251ef3ed35e2e4590e50f",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part02"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part03",
       "bytes": 8388608,
-      "sha256": "c42fb96134902fe729dc8e00942f6ac015e8debde196d2ec3cf9f70f171406ba",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part03"
+      "sha256": "343b1bc4c9ecb33fa91428664156f4d16ce96fdbddccb88fbe0c57be47d91a66",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part03"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part04",
       "bytes": 8388608,
-      "sha256": "7cb4ba09562b0d53756a725bb6273984bd3bc6fdf60c3a49fad102cf86d35d42",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part04"
+      "sha256": "52fc76c836daefd0f1aed351e599e82c5dd6f3e7c950f4332fcecf437cae03b9",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part04"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part05",
       "bytes": 8388608,
-      "sha256": "e34a76aba5f82202eef4a3538c0ec91f92ce908f3e23a23685be97b125ca1f57",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part05"
+      "sha256": "fbf34a180e445a7795328b20aa206c79d31018b4a6b9c23bdbd6d38498a9fa8f",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part05"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part06",
       "bytes": 8388608,
-      "sha256": "c3b8b42719df6a5b193948a43e41295fd3bdf15051d415c0a9b55a5513376511",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part06"
+      "sha256": "46fb676f588aa31ab85aa131a735668a899dc2b9110ad1d724b7978c3ff6b0c8",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part06"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part07",
       "bytes": 8388608,
-      "sha256": "51af794156d1cbd472b2bb792d34a8a2de6be87283fed723733d38a5ff711fa2",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part07"
+      "sha256": "6aeebd525f4af5e3ab2ae01fe7d2465c5433282478030b3e5c5658c9a236bc2e",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part07"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part08",
       "bytes": 8388608,
-      "sha256": "b86a30ae3ffd6a6afe481be2fd57db526bc3814ce06fa2296739160d5554cae2",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part08"
+      "sha256": "3c2454d9e0c444c1cedfb6572324392d05a538b8e90e1749283dca89145ee2f1",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part08"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part09",
       "bytes": 8388608,
-      "sha256": "505f1c1717d6ea312b2e0ce5220e1a0f6e49e06ef6d61f05304422a665143dba",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part09"
+      "sha256": "87626841630142455a9b21083bebd50ba5e353c0d851c9cad2e1d2270a4e3fd9",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part09"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part10",
       "bytes": 8388608,
-      "sha256": "65f32cf4a06dac800af11175beebb22b9837c28bbfb1b4580c0088342f5e36d5",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part10"
+      "sha256": "b8e8426db98d642e8a442f66d78277261dc8f3d6dff6ccf8f4781daaf5ed781e",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part10"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part11",
       "bytes": 8388608,
-      "sha256": "c680d8c386ed598f851a4db19088441a02817726be81e0e22a7938d49f0b8f6f",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part11"
+      "sha256": "e6201113d8260915539b3064ffea0bf76c76226476730e9521ec8a3a07670a95",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part11"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part12",
       "bytes": 8388608,
-      "sha256": "c67bda9395b0c6c71a0663249dcabda1e0d4e1fee2d4b9ee5bf35171629065e3",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part12"
+      "sha256": "97ba2e36f158fb4f20228f77505e543b54f64ebbbd876ccef2e2adba9f3c92ea",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part12"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part13",
       "bytes": 8388608,
-      "sha256": "88b8b8f337d66156eafc08aa051d2e217c84c857c53c18c086349eec25f62fc9",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part13"
+      "sha256": "b89db23093353e0eaf9ff13e96ec1164da79d22dab4c3d5b9cb14c7eb0b79496",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part13"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part14",
       "bytes": 8388608,
-      "sha256": "7fd09c602315df7845749bbf12a262766e36ff59383e239ac6e200c5b4d207d2",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part14"
+      "sha256": "69b77f3bc1ee26f2d20c485c73b21a408fee9a11cec269992aab1fc78cba1cab",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part14"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part15",
       "bytes": 8388608,
-      "sha256": "0bf426caa6d5fd9bcfb9def9875c78a1da3cb91c43531a70bc3fe83065886e73",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part15"
+      "sha256": "b80a1540a0fe3d15cdb10b0f99844332c88a1286bca45910c6579d4c7fe0e794",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part15"
     },
     {
       "name": "RA2-Explorer-Pages-Data.zip.part16",
-      "bytes": 3555704,
-      "sha256": "b89427576d0566bd67368c26c1697e210b1bc02b63c57294b88af0487be64577",
-      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.13.1/RA2-Explorer-Pages-Data.zip.part16"
+      "bytes": 3698698,
+      "sha256": "4cd88209e0781bef45a3446f378ebaedb9811c7dcb9a877762f1949c603ba541",
+      "url": "https://github.com/Hansimov/ra2-explorer/releases/download/pages-data-0.14.0/RA2-Explorer-Pages-Data.zip.part16"
     }
   ],
   "snapshot_id": "ra2md-slim-f1b4a39eb00b",
-  "sha256": "9cab813a658d3f87062980b5d68f276d10761d77ecc25d47628a84d45357ec24",
-  "bytes": 129384824,
-  "unpacked_bytes": 195205771,
+  "sha256": "3a36a90e05cc95755c9a43f56dbcaf58ae3d34064323012f97c39c278f466969",
+  "bytes": 129527818,
+  "unpacked_bytes": 197382290,
   "units": 559,
   "sounds": 3322
 }

@@ -43,3 +43,25 @@ def test_translation_format_rejects_angle_brackets_on_dialogue() -> None:
             "translation": "<准备就绪，指挥官。>",
         }
     ]
+
+
+def test_translation_format_rejects_terminal_punctuation_mismatch() -> None:
+    entries = {
+        "missing": _entry("Hold position", "坚守阵地。"),
+        "wrong": _entry("Ready?", "准备好了！"),
+    }
+
+    assert translation_format_violations(entries) == [
+        {
+            "stem": "missing",
+            "reason": "terminal-punctuation",
+            "original": "Hold position",
+            "translation": "坚守阵地。",
+        },
+        {
+            "stem": "wrong",
+            "reason": "terminal-punctuation",
+            "original": "Ready?",
+            "translation": "准备好了！",
+        },
+    ]

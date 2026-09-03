@@ -2,13 +2,13 @@
   "schema_version": 1,
   "provider": "npm+jsdelivr",
   "package": "ra2-explorer-pages-data",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "registry": "https://registry.npmjs.org/",
-  "base_url": "https://cdn.jsdelivr.net/npm/ra2-explorer-pages-data@0.13.1/data",
+  "base_url": "https://cdn.jsdelivr.net/npm/ra2-explorer-pages-data@0.14.0/data",
   "snapshot_id": "ra2md-slim-f1b4a39eb00b",
   "files": 38,
-  "bytes": 15777433,
-  "sha256": "cc5dbc4f8af28ea49381fe8a571580d5ae63de2c8603a5da10f8fbdab2909f07",
+  "bytes": 16150495,
+  "sha256": "76ef9ec39a5698b4e22c1caa95408c9bd10d1f3e04c8f8bf310cfe15da95220a",
   "included": [
     "manifest",
     "bilingual_catalogs",
@@ -16,9 +16,9 @@
     "entity_search_atlases"
   ],
   "contains_original_game_files": false,
-  "package_bytes": 9735072,
-  "package_unpacked_bytes": 15778840,
-  "integrity": "sha512-KmY9PoPZ4m3jusqZVX53crmec3bSNXkKg0biyYqgSO3YSFAmvsHO3POP4G5jc0dV4pfLR53HwQmroUxKgGYikA==",
-  "shasum": "f426a536179a235bfa8692b20c90fab63e32b0cf",
+  "package_bytes": 9750608,
+  "package_unpacked_bytes": 16151902,
+  "integrity": "sha512-GPAS1iE6UT7VAuWb9S/aciCiFxTVcdAa2lHoeQ5WfzEZceXJp9Vhl4+OCnquuEbpNXWiFujpzzge4oKMwp7tcA==",
+  "shasum": "fc3031a9a5641bfbd51f55a3b59de270a84b6f0d",
   "published": true
 }
