@@ -9,10 +9,31 @@ import pytest
 from scripts.publish_pages_cdn import (
     PagesCdnPublishError,
     _content_digest,
+    _is_cdn_member,
     _safe_member_path,
     prepare_package,
     publish_package,
 )
+
+
+@pytest.mark.parametrize(
+    ("path", "profile"),
+    [
+        ("manifest.json", "core"),
+        ("catalog/entities.zh-CN.json", "core"),
+        ("assets/example.json", "metadata"),
+        ("entities/zh-CN/example.json", "metadata"),
+        ("previews/entities/example/frame/0/0.webp", "entity-previews"),
+        ("previews/assets/example/auto/0.webp", "animation-previews"),
+    ],
+)
+def test_pages_cdn_profiles_route_expected_content(path: str, profile: str) -> None:
+    assert _is_cdn_member(path, profile)
+    assert all(
+        not _is_cdn_member(path, candidate)
+        for candidate in {"core", "metadata", "entity-previews", "animation-previews"}
+        - {profile}
+    )
 
 
 def _snapshot_archive(path: Path) -> Path:
@@ -24,6 +45,8 @@ def _snapshot_archive(path: Path) -> Path:
         "catalog/media.zh-TW.json": b"{}",
         "previews/entity-atlases/vehicle/0-r4.webp": b"webp",
         "previews/entity-search-atlases/1-r4.webp": b"search-webp",
+        "previews/entities/example/frame/0/0.webp": b"entity-frame",
+        "previews/assets/example/color-blue/auto/0-shadow-none.webp": b"animation-frame",
         "audio/example.ogg": b"audio",
         "assets/example.json": b"{}",
         "entities/zh-CN/example.json": b"{}",
@@ -60,7 +83,7 @@ def _snapshot_archive(path: Path) -> Path:
     return path
 
 
-def test_prepare_pages_cdn_package_keeps_only_startup_data(tmp_path: Path) -> None:
+def test_prepare_pages_cdn_package_keeps_startup_and_animation_data(tmp_path: Path) -> None:
     archive = _snapshot_archive(tmp_path / "snapshot.zip")
     staging = tmp_path / "staging"
 
@@ -76,8 +99,13 @@ def test_prepare_pages_cdn_package_keeps_only_startup_data(tmp_path: Path) -> No
     assert (staging / "data/catalog/entities.zh-CN.json").is_file()
     assert (staging / "data/previews/entity-atlases/vehicle/0-r4.webp").is_file()
     assert (staging / "data/previews/entity-search-atlases/1-r4.webp").is_file()
+    assert (staging / "data/assets/example.json").is_file()
+    assert (staging / "data/entities/zh-CN/example.json").is_file()
+    assert (staging / "data/previews/entities/example/frame/0/0.webp").is_file()
+    assert (
+        staging / "data/previews/assets/example/color-blue/auto/0-shadow-none.webp"
+    ).is_file()
     assert not (staging / "data/audio/example.ogg").exists()
-    assert not (staging / "data/assets/example.json").exists()
     package = json.loads((staging / "package.json").read_text(encoding="utf-8"))
     assert package["license"] == "SEE LICENSE IN NOTICE.txt"
 

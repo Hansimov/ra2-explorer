@@ -957,6 +957,10 @@ def test_unassociated_voice_keeps_catalog_transcript_in_asset_data(
     )
     source_dir = tmp_path / "voice-only-installation"
     source_dir.mkdir()
+    (source_dir / "rulesmd.ini").write_text(
+        "[Countries]\n0=Africans\n[Africans]\nName=Libya\nSide=Nod\n",
+        encoding="ascii",
+    )
     (source_dir / "tauli02.wav").write_bytes(_build_fixture_wav())
     client = TestClient(create_app(settings))
 
@@ -971,6 +975,9 @@ def test_unassociated_voice_keeps_catalog_transcript_in_asset_data(
     assert item["slots"] == ["multiplayer_attack"]
     assert item["countries"] == ["Africans"]
     assert item["sides"] == ["Nod"]
+    assert media["countries"] == [
+        {"id": "Africans", "display_name": "Libya", "side": "Nod", "count": 1}
+    ]
     asset = item["asset"]
 
     associations = client.get(

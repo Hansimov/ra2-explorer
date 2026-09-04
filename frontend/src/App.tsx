@@ -23,6 +23,7 @@ import {
   AssetAssociationPage,
   AssetMetadata,
   AssetSort,
+  CountryFacet,
   DiscoveryResult,
   EntityDependency,
   EntityKind,
@@ -1371,6 +1372,7 @@ function ExplorerApp() {
   const mediaLoadedCountRef = useRef(0);
   const [mediaGroups, setMediaGroups] = useState<Array<{ group: string; count: number }>>([]);
   const [mediaEventTypes, setMediaEventTypes] = useState<Array<{ event_type: string; count: number }>>([]);
+  const [mediaCountries, setMediaCountries] = useState<CountryFacet[]>([]);
   const [mediaKindCounts, setMediaKindCounts] = useState<Array<{ kind: MediaKind; count: number }>>([]);
   const [searchEntityItems, setSearchEntityItems] = useState<EntitySummary[]>([]);
   const [searchEntityTotal, setSearchEntityTotal] = useState(0);
@@ -2081,6 +2083,7 @@ function ExplorerApp() {
     setMediaGroups([]);
     setMediaKindCounts([]);
     setMediaEventTypes([]);
+    setMediaCountries([]);
     setSearchEntityItems([]);
     setSearchEntityTotal(0);
     setSearchMediaItems([]);
@@ -2181,6 +2184,7 @@ function ExplorerApp() {
           setMediaGroups(orderedMediaGroups(page.groups));
           setMediaKindCounts(page.kinds);
           setMediaEventTypes(page.event_types || []);
+          setMediaCountries(page.countries || []);
           const remembered = assetSelectionsRef.current.get(
             assetSelectionKey(sourceId, selectedCategoryId, mediaGroup),
           ) || "";
@@ -2574,6 +2578,7 @@ function ExplorerApp() {
       mediaLoadedCountRef.current += page.items.length;
       setMediaTotal(page.total);
       setMediaEventTypes(page.event_types || []);
+      setMediaCountries(page.countries || []);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "载入失败");
     } finally {
@@ -2717,6 +2722,7 @@ function ExplorerApp() {
             loading={mediaLoading}
             search={catalogSearch}
             groups={mediaGroups.filter((group) => group.group.endsWith(mediaKind === "voice" ? "_voice" : "_sound"))}
+            countries={mediaCountries}
             selectedGroup={mediaGroup}
             setSelectedGroup={selectMediaGroup}
             eventTypes={mediaEventTypes}
@@ -3050,7 +3056,33 @@ function semanticSoundSectionIdentity(item: MediaItem, selectedGroup: string) {
   return null;
 }
 
-function mediaSectionIdentity(item: MediaItem, selectedGroup: string) {
+interface MediaSectionIdentity {
+  key: string;
+  label: string;
+  subtitle: string;
+  countryOrder?: number;
+}
+
+function mediaSectionIdentity(
+  item: MediaItem,
+  selectedGroup: string,
+  countryNames: ReadonlyMap<string, { label: string; order: number }>,
+): MediaSectionIdentity {
+  if (["multiplayer_voice", "taunt_voice"].includes(selectedGroup) && item.countries.length > 0) {
+    const countryIds = [...item.countries].sort((left, right) => (
+      (countryNames.get(left)?.order ?? Number.MAX_SAFE_INTEGER)
+      - (countryNames.get(right)?.order ?? Number.MAX_SAFE_INTEGER)
+      || left.localeCompare(right)
+    ));
+    return {
+      key: `country:${countryIds.join("|")}`,
+      label: countryIds.map((id) => countryNames.get(id)?.label || id).join(" · "),
+      subtitle: "",
+      countryOrder: Math.min(...countryIds.map(
+        (id) => countryNames.get(id)?.order ?? Number.MAX_SAFE_INTEGER,
+      )),
+    };
+  }
   const semanticSection = semanticSoundSectionIdentity(item, selectedGroup);
   if (semanticSection) return semanticSection;
   if (item.entities.length === 1) {
@@ -3442,12 +3474,13 @@ function SearchResultsPanel({
   </section>;
 }
 
-function MediaListPanel({ items, total, loading, search, groups, selectedGroup, setSelectedGroup, eventTypes, selectedEventType, setSelectedEventType, grouped, setGrouped, headerAlignment, voiceTextPreference, selectedId, onSelect, playingId, sort, setSort, layout, setLayout, onLoadMore, scrollKey, scrollResetRevision, catalogFocus, onCatalogFocusComplete }: {
+function MediaListPanel({ items, total, loading, search, groups, countries, selectedGroup, setSelectedGroup, eventTypes, selectedEventType, setSelectedEventType, grouped, setGrouped, headerAlignment, voiceTextPreference, selectedId, onSelect, playingId, sort, setSort, layout, setLayout, onLoadMore, scrollKey, scrollResetRevision, catalogFocus, onCatalogFocusComplete }: {
   items: MediaItem[];
   total: number;
   loading: boolean;
   search: CatalogSearchBarProps;
   groups: Array<{ group: string; count: number }>;
+  countries: CountryFacet[];
   selectedGroup: string;
   setSelectedGroup: (value: string) => void;
   eventTypes: Array<{ event_type: string; count: number }>;
@@ -3473,15 +3506,29 @@ function MediaListPanel({ items, total, loading, search, groups, selectedGroup, 
   const listScroll = useRememberedScroll(scrollKey, items.length, scrollResetRevision);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
   const sections = useMemo(() => {
-    const groupedItems = new Map<string, { label: string; subtitle: string; items: MediaItem[] }>();
+    const countryNames = new Map<string, { label: string; order: number }>(
+      countries.map((country, order) => [
+        country.id,
+        { label: country.display_name, order },
+      ] as const),
+    );
+    const groupedItems = new Map<string, { label: string; subtitle: string; countryOrder: number; items: MediaItem[] }>();
     for (const item of items) {
-      const identity = mediaSectionIdentity(item, selectedGroup);
-      const section = groupedItems.get(identity.key) || { label: identity.label, subtitle: identity.subtitle, items: [] };
+      const identity = mediaSectionIdentity(item, selectedGroup, countryNames);
+      const section: { label: string; subtitle: string; countryOrder: number; items: MediaItem[] } = groupedItems.get(identity.key) || {
+        label: identity.label,
+        subtitle: identity.subtitle,
+        countryOrder: identity.countryOrder ?? Number.MAX_SAFE_INTEGER,
+        items: [],
+      };
       section.items.push(item);
       groupedItems.set(identity.key, section);
     }
-    return [...groupedItems.entries()].map(([key, section]) => ({ key, ...section }));
-  }, [items, selectedGroup]);
+    const result = [...groupedItems.entries()].map(([key, section]) => ({ key, ...section }));
+    return ["multiplayer_voice", "taunt_voice"].includes(selectedGroup)
+      ? result.sort((left, right) => left.countryOrder - right.countryOrder || left.label.localeCompare(right.label))
+      : result;
+  }, [countries, items, selectedGroup]);
   const allSectionsExpanded = sections.every((section) => !collapsedSections.has(section.key));
 
   useEffect(() => {
@@ -4012,7 +4059,7 @@ function FrameGrid({ count, active, onSelect, urlFor, scrollKey }: { count: numb
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [scrollKey]);
-  return <div ref={scrollRef} className="frame-grid" aria-label="全部动画帧">{Array.from({ length: count }, (_, index) => <button type="button" key={index} className={active === index ? "active" : ""} onClick={() => onSelect(index)}><img loading="lazy" src={urlFor(index)} alt={`第 ${index + 1} 帧`} /><span>{index + 1}</span></button>)}</div>;
+  return <div ref={scrollRef} className="frame-grid" aria-label="全部动画帧">{Array.from({ length: count }, (_, index) => <button type="button" key={index} className={active === index ? "active" : ""} onClick={() => onSelect(index)}><DeferredPreviewImage src={urlFor(index)} alt={`第 ${index + 1} 帧`} /><span>{index + 1}</span></button>)}</div>;
 }
 
 function FrameTransport({ frame, count, playing, onPlayingChange, onFrameChange, label = "动画帧", playDisabled = false }: {
@@ -4060,6 +4107,8 @@ function preloadDecodedImageFrame(src: string, priority: ImageFetchPriority = "a
   image.decoding = "async";
   image.fetchPriority = priority;
   const promise = new Promise<HTMLImageElement>((resolve) => {
+    const fallbackSrc = api.snapshotFallbackUrl(src);
+    let fallbackAttempted = false;
     const finish = (cache = true) => {
       pendingImageFrames.delete(src);
       if (cache) {
@@ -4076,7 +4125,14 @@ function preloadDecodedImageFrame(src: string, priority: ImageFetchPriority = "a
       if (typeof image.decode === "function") void image.decode().catch(() => undefined).then(() => finish());
       else finish();
     };
-    image.onerror = () => finish(false);
+    image.onerror = () => {
+      if (!fallbackAttempted && fallbackSrc !== src) {
+        fallbackAttempted = true;
+        image.src = fallbackSrc;
+        return;
+      }
+      finish(false);
+    };
   });
   pendingImageFrames.set(src, { image, promise });
   image.src = src;
@@ -4118,8 +4174,8 @@ function DeferredPreviewImage({ src, alt = "" }: { src: string; alt?: string }) 
     if (!target || !src) return;
     let cancelled = false;
     const request = () => {
-      void preloadDecodedImageFrame(src, "low").then(() => {
-        if (!cancelled) setReadySrc(src);
+      void preloadDecodedImageFrame(src, "low").then((image) => {
+        if (!cancelled && image.naturalWidth) setReadySrc(image.currentSrc || image.src || src);
       });
     };
     if (!("IntersectionObserver" in window)) {
@@ -4380,11 +4436,13 @@ function StablePreviewImage({ src, alt, style, className, draggable = false, onB
   onError?: () => void;
 }) {
   const [displayedSrc, setDisplayedSrc] = useState(src);
-  const requestedSrc = useRef(src);
+  const [resolvedRequest, setResolvedRequest] = useState({ source: src, url: src });
+  const requestedUrl = resolvedRequest.source === src ? resolvedRequest.url : src;
+  const requestedSrc = useRef(requestedUrl);
   const onBeforeRevealRef = useRef(onBeforeReveal);
   const onLoadRef = useRef(onLoad);
   const onErrorRef = useRef(onError);
-  requestedSrc.current = src;
+  requestedSrc.current = requestedUrl;
   onBeforeRevealRef.current = onBeforeReveal;
   onLoadRef.current = onLoad;
   onErrorRef.current = onError;
@@ -4403,12 +4461,21 @@ function StablePreviewImage({ src, alt, style, className, draggable = false, onB
     else reveal();
   }
 
-  const pendingSrc = src && src !== displayedSrc ? src : "";
+  function handleImageError(failedSrc: string) {
+    const fallbackSrc = api.snapshotFallbackUrl(failedSrc);
+    if (fallbackSrc !== failedSrc) {
+      setResolvedRequest({ source: src, url: fallbackSrc });
+      return;
+    }
+    onErrorRef.current?.();
+  }
+
+  const pendingSrc = requestedUrl && requestedUrl !== displayedSrc ? requestedUrl : "";
   return <>
     {displayedSrc && <img
       key={displayedSrc}
       src={displayedSrc}
-      data-requested-src={src}
+      data-requested-src={requestedUrl}
       data-frame-state="active"
       alt={alt}
       className={className}
@@ -4420,13 +4487,13 @@ function StablePreviewImage({ src, alt, style, className, draggable = false, onB
         if (requestedSrc.current === displayedSrc) onLoadRef.current?.(event.currentTarget);
       }}
       onError={() => {
-        if (requestedSrc.current === displayedSrc) onErrorRef.current?.();
+        if (requestedSrc.current === displayedSrc) handleImageError(displayedSrc);
       }}
     />}
     {pendingSrc && <img
       key={pendingSrc}
       src={pendingSrc}
-      data-requested-src={src}
+      data-requested-src={requestedUrl}
       data-frame-state="pending"
       alt=""
       aria-hidden="true"
@@ -4437,7 +4504,7 @@ function StablePreviewImage({ src, alt, style, className, draggable = false, onB
       style={style}
       onLoad={(event) => revealPending(event.currentTarget, pendingSrc)}
       onError={() => {
-        if (requestedSrc.current === pendingSrc) onErrorRef.current?.();
+        if (requestedSrc.current === pendingSrc) handleImageError(pendingSrc);
       }}
     />}
   </>;
@@ -4840,7 +4907,18 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   const renderFacing = entity?.preview.supports_facing
     ? entityFacingForPreviewAngle(entity.preview.facing_format, previewAngle)
     : 0;
-  const [playerColor, setPlayerColor] = useState("");
+  const defaultPlayerColor = entity ? entityCardPlayerColor(entity) : "";
+  const [playerColorSelection, setPlayerColorSelection] = useState<{
+    entityId: string;
+    color: string;
+  } | null>(null);
+  const playerColor = playerColorSelection && playerColorSelection.entityId === entity?.id
+    ? playerColorSelection.color
+    : defaultPlayerColor;
+  const selectablePlayerColors = defaultPlayerColor
+    && !playerColors.some((color) => color.id === defaultPlayerColor)
+    ? [{ id: defaultPlayerColor, rgb: [], hex: "" }, ...playerColors]
+    : playerColors;
   const [playing, setPlaying] = useState(false);
   const [frameMode, setFrameMode] = useState<"sequence" | "grid">("sequence");
   const [soundAssociationLayout, setSoundAssociationLayout] = useState<LayoutMode>("list");
@@ -5013,7 +5091,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
   useEffect(() => {
     setFrame(0);
     setPreviewAngle(defaultPreviewAngleRef.current);
-    setPlayerColor("");
+    setPlayerColorSelection(null);
     setPlaying(false);
     setFrameMode("sequence");
     setActiveAnimation(null);
@@ -5365,7 +5443,7 @@ function EntityDetailPanel({ sourceId, sourceRevision = "", entity, loading, pla
             </div>}
             <div className="entity-render-options compact-render-options">
               {(entity.voxel || entity.preview.supports_facing) && <label><span>角度</span><select aria-label="单位预览角度" value={previewAngle} onChange={(event) => setPreviewAngle(normalizePreviewAngle(Number(event.target.value)))}>{previewAngleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>}
-              {entity.preview.supports_player_color && <label title="选择玩家颜色"><select aria-label="玩家颜色" value={playerColor} onChange={(event) => setPlayerColor(event.target.value)}><option value="">原始色</option>{playerColors.map((color) => <option key={color.id} value={color.id}>{playerColorLabels[color.id] || color.id}</option>)}</select></label>}
+              {entity.preview.supports_player_color && <label title="选择玩家颜色"><select aria-label="玩家颜色" value={playerColor} onChange={(event) => setPlayerColorSelection({ entityId: entity.id, color: event.target.value })}><option value="">原始色</option>{selectablePlayerColors.map((color) => <option key={color.id} value={color.id}>{playerColorLabels[color.id] || color.id}</option>)}</select></label>}
             </div>
           </div> : <div className="unsupported-preview"><Icon name="unit" size={34} /><strong>{entityBodyStatusLabel(entity)}</strong></div>}
         </div>

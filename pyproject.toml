@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ra2-explorer"
-version = "0.14.0"
+version = "0.15.0"
 description = "Local-first Red Alert 2 asset explorer"
 readme = "README.md"
 requires-python = ">=3.11"

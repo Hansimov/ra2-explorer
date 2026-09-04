@@ -21,6 +21,32 @@ const externalSnapshotBase = (import.meta.env.VITE_RA2EXP_STATIC_CDN_BASE || "")
   .trim()
   .replace(/\/+$/, "");
 
+interface ExternalSnapshotRoute {
+  prefix: string;
+  base_url: string;
+}
+
+function parseExternalSnapshotRoutes() {
+  try {
+    const value = JSON.parse(import.meta.env.VITE_RA2EXP_STATIC_CDN_ROUTES || "[]") as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((route): ExternalSnapshotRoute[] => {
+      if (!route || typeof route !== "object") return [];
+      const candidate = route as { prefix?: unknown; base_url?: unknown };
+      if (typeof candidate.prefix !== "string" || typeof candidate.base_url !== "string") return [];
+      const prefix = candidate.prefix.trim().replace(/^\/+/, "");
+      const baseUrl = candidate.base_url.trim().replace(/\/+$/, "");
+      return prefix && baseUrl ? [{ prefix, base_url: baseUrl }] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+const externalSnapshotRoutes = parseExternalSnapshotRoutes();
+
+const staticDataVersion = import.meta.env.VITE_RA2EXP_STATIC_DATA_VERSION?.trim() || "";
+
 interface StaticAssetBundle {
   asset: Asset;
   metadata: AssetMetadata;
@@ -56,22 +82,41 @@ function publicUrl(path: string) {
 }
 
 function localSnapshotUrl(path: string) {
-  return publicUrl(`data/${path}`);
+  const url = publicUrl(`data/${path}`);
+  return staticDataVersion
+    ? `${url}?data=${encodeURIComponent(staticDataVersion)}`
+    : url;
 }
 
 function isExternalSnapshotPath(path: string) {
   const normalized = path.replace(/^\/+/, "");
   return normalized === "manifest.json"
     || normalized.startsWith("catalog/")
+    || normalized.startsWith("assets/")
+    || normalized.startsWith("entities/")
+    || normalized.startsWith("previews/assets/")
+    || normalized.startsWith("previews/entities/")
     || normalized.startsWith("previews/entity-atlases/")
     || normalized.startsWith("previews/entity-search-atlases/");
 }
 
 function snapshotUrl(path: string) {
   const normalized = path.replace(/^\/+/, "");
-  return externalSnapshotBase && isExternalSnapshotPath(normalized)
-    ? `${externalSnapshotBase}/${normalized}`
-    : localSnapshotUrl(normalized);
+  const route = externalSnapshotRoutes.find(
+    (item) => normalized === item.prefix || normalized.startsWith(item.prefix),
+  );
+  if (route) return `${route.base_url}/${normalized}`;
+  if (externalSnapshotBase && isExternalSnapshotPath(normalized)) {
+    return `${externalSnapshotBase}/${normalized}`;
+  }
+  return localSnapshotUrl(normalized);
+}
+
+export function staticSnapshotFallbackUrl(url: string) {
+  const bases = [externalSnapshotBase, ...externalSnapshotRoutes.map((route) => route.base_url)]
+    .filter(Boolean);
+  const externalPrefix = bases.map((base) => `${base}/`).find((prefix) => url.startsWith(prefix));
+  return externalPrefix ? localSnapshotUrl(url.slice(externalPrefix.length)) : url;
 }
 
 async function fetchJson<T>(url: string) {
@@ -219,6 +264,7 @@ function mediaSearchValues(item: MediaItem) {
     ...item.texts,
     ...item.original_texts,
     ...item.localized_texts,
+    ...item.translated_texts,
     ...item.events,
     ...item.slots,
     ...(item.mission ? [item.mission.key, item.mission.game, item.mission.campaign, String(item.mission.number)] : []),
@@ -271,7 +317,25 @@ async function entityCatalog(language: GameLanguage) {
 }
 
 async function mediaCatalog(language: GameLanguage) {
-  return await loadJson<MediaPage>(`catalog/media.${language}.json`);
+  const catalog = await loadJson<MediaPage>(`catalog/media.${language}.json`);
+  return {
+    ...catalog,
+    countries: catalog.countries || [],
+    items: catalog.items.map((item) => ({
+      ...item,
+      groups: item.groups || [],
+      texts: item.texts || [],
+      original_texts: item.original_texts || [],
+      localized_texts: item.localized_texts || [],
+      localized_text_origins: item.localized_text_origins || [],
+      translated_texts: item.translated_texts || [],
+      events: item.events || [],
+      slots: item.slots || [],
+      entities: item.entities || [],
+      countries: item.countries || [],
+      sides: item.sides || [],
+    })),
+  };
 }
 
 async function filterEntities(params: URLSearchParams): Promise<EntityPage> {
@@ -313,7 +377,7 @@ async function filterEntities(params: URLSearchParams): Promise<EntityPage> {
     usages: catalog.usages
       .map((item) => ({ ...item, count: usageCounts.get(item.usage) || 0 }))
       .filter((item) => item.count > 0),
-    countries: catalog.countries
+    countries: (catalog.countries || [])
       .map((item) => ({ ...item, count: countryCounts.get(item.id) || 0 }))
       .filter((item) => item.count > 0),
     sides: [...sideCounts.entries()].sort(([left], [right]) => left.localeCompare(right))
@@ -349,6 +413,7 @@ async function filterMedia(params: URLSearchParams): Promise<MediaPage> {
     )));
   }
   const eventCounts = countBy(items, (item) => item.slots);
+  const countryCounts = countBy(items, (item) => item.countries);
   const eventType = params.get("event_type");
   if (eventType) items = items.filter((item) => item.slots.includes(eventType));
   const sort = params.get("sort") || "name_asc";
@@ -375,6 +440,9 @@ async function filterMedia(params: URLSearchParams): Promise<MediaPage> {
       .map(([value, count]) => ({ group: value, count })),
     event_types: [...eventCounts.entries()].sort(([left], [right]) => left.localeCompare(right))
       .map(([value, count]) => ({ event_type: value, count })),
+    countries: catalog.countries
+      .map((item) => ({ ...item, count: countryCounts.get(item.id) || 0 }))
+      .filter((item) => item.count > 0),
   };
 }
 
@@ -474,8 +542,10 @@ export function staticEntityModelUrl(entityId: string, frame = 0) {
   return snapshotUrl(`models/entities/${encodeURIComponent(entityId)}/${frame}.json`);
 }
 
-export function staticAssetModelUrl(assetId: string, frame = 0) {
-  return snapshotUrl(`models/assets/${encodeURIComponent(assetId)}/${frame}.json`);
+export function staticAssetModelUrl(assetId: string, frame = 0, playerColor = "") {
+  return snapshotUrl(
+    `models/assets/${encodeURIComponent(assetId)}/color-${playerColor || "original"}/${frame}.json`,
+  );
 }
 
 export function staticAssetPreviewUrl(
@@ -483,9 +553,10 @@ export function staticAssetPreviewUrl(
   frame: number,
   palette: "unit" | "animation" | undefined,
   shadowFrame: number | undefined,
+  playerColor = "",
 ) {
   return snapshotUrl(
-    `previews/assets/${encodeURIComponent(assetId)}/${palette || "auto"}/${frame}-shadow-${shadowFrame ?? "none"}.webp`,
+    `previews/assets/${encodeURIComponent(assetId)}/color-${playerColor || "original"}/${palette || "auto"}/${frame}-shadow-${shadowFrame ?? "none"}.webp`,
   );
 }
 

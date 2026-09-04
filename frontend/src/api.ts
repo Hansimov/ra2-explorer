@@ -7,6 +7,7 @@ import {
   staticEntityPreviewUrl,
   staticEntityThumbnailAtlasFallbackUrl,
   staticEntityThumbnailAtlasUrl,
+  staticSnapshotFallbackUrl,
   staticSnapshotRequest,
 } from "./staticSnapshot";
 
@@ -370,9 +371,16 @@ export interface EntityPage {
   total: number;
   kinds: Array<{ kind: EntityKind; count: number }>;
   usages: Array<{ usage: EntityUsage; count: number }>;
-  countries: Array<{ id: string; display_name: string; side: string; count: number }>;
+  countries: CountryFacet[];
   sides: Array<{ id: string; count: number }>;
   warnings: string[];
+}
+
+export interface CountryFacet {
+  id: string;
+  display_name: string;
+  side: string;
+  count: number;
 }
 
 export type MediaKind = "voice" | "sound" | "unknown";
@@ -420,6 +428,7 @@ export interface MediaPage {
   kinds: Array<{ kind: MediaKind; count: number }>;
   groups: Array<{ group: string; count: number }>;
   event_types: Array<{ event_type: string; count: number }>;
+  countries: CountryFacet[];
 }
 
 export interface EntityListOptions {
@@ -698,6 +707,9 @@ export const api = {
   entityThumbnailAtlasFallbackUrl: (path: string, facing: number) => isStaticSnapshot
     ? staticEntityThumbnailAtlasFallbackUrl(path, facing)
     : "",
+  snapshotFallbackUrl: (url: string) => isStaticSnapshot
+    ? staticSnapshotFallbackUrl(url)
+    : url,
   entityModelUrl: (
     sourceId: string,
     entityId: string,
@@ -711,7 +723,7 @@ export const api = {
     return `/api/entities/${encodeURIComponent(sourceId)}/${encodeURIComponent(entityId)}/model.json?${params}`;
   },
   assetModelUrl: (assetId: string, frame = 0, playerColor = "", paletteId = "") => {
-    if (isStaticSnapshot) return staticAssetModelUrl(assetId, frame);
+    if (isStaticSnapshot) return staticAssetModelUrl(assetId, frame, playerColor);
     const params = new URLSearchParams({ frame: String(frame), v: "5" });
     if (playerColor) params.set("player_color", playerColor);
     if (paletteId) params.set("palette_id", paletteId);
@@ -725,7 +737,13 @@ export const api = {
     playerColor = "",
     options: { palette?: "unit" | "animation"; shadowFrame?: number } = {},
   ) => {
-    if (isStaticSnapshot) return staticAssetPreviewUrl(assetId, frame, options.palette, options.shadowFrame);
+    if (isStaticSnapshot) return staticAssetPreviewUrl(
+      assetId,
+      frame,
+      options.palette,
+      options.shadowFrame,
+      playerColor,
+    );
     const params = new URLSearchParams({ frame: String(frame), scale: String(scale) });
     if (paletteId) params.set("palette_id", paletteId);
     if (playerColor) params.set("player_color", playerColor);

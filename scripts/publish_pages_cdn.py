@@ -29,6 +29,23 @@ REQUIRED_CATALOGS = {
     "catalog/media.zh-CN.json",
     "catalog/media.zh-TW.json",
 }
+CDN_PROFILE_PREFIXES = {
+    "core": (
+        "catalog/",
+        "previews/entity-atlases/",
+        "previews/entity-search-atlases/",
+    ),
+    "metadata": ("assets/", "entities/"),
+    "entity-previews": ("previews/entities/",),
+    "animation-previews": ("previews/assets/",),
+}
+CDN_PROFILE_INCLUDED = {
+    "core": ["manifest", "bilingual_catalogs", "entity_card_atlases", "entity_search_atlases"],
+    "metadata": ["entity_details", "generated_asset_metadata"],
+    "entity-previews": ["rendered_entity_previews"],
+    "animation-previews": ["rendered_animation_previews"],
+}
+CDN_PROFILES = ("all", *CDN_PROFILE_PREFIXES)
 
 
 class PagesCdnPublishError(RuntimeError):
@@ -58,10 +75,19 @@ def _safe_member_path(raw_path: str) -> str:
     return candidate.as_posix()
 
 
-def _is_cdn_member(path: str) -> bool:
-    return path == "manifest.json" or path in REQUIRED_CATALOGS or path.startswith(
-        ("previews/entity-atlases/", "previews/entity-search-atlases/")
+def _is_cdn_member(path: str, profile: str = "all") -> bool:
+    if profile not in CDN_PROFILES:
+        raise PagesCdnPublishError(f"未知的 CDN 资料分组：{profile}")
+    if profile == "core" and path == "manifest.json":
+        return True
+    if profile == "all" and path == "manifest.json":
+        return True
+    prefixes = (
+        tuple(prefix for values in CDN_PROFILE_PREFIXES.values() for prefix in values)
+        if profile == "all"
+        else CDN_PROFILE_PREFIXES[profile]
     )
+    return path.startswith(prefixes)
 
 
 def _validate_identity(package_name: str, version: str) -> None:
@@ -84,8 +110,8 @@ def _content_digest(files: list[tuple[str, bytes]]) -> str:
 def _package_notice() -> str:
     return (
         "RA2 Explorer Pages data package\n\n"
-        "This package contains generated bilingual indexes and compact card and search-preview "
-        "atlases.\n"
+        "This package contains generated bilingual indexes, compact unit previews, and rendered "
+        "animation frames.\n"
         "It does not contain original MIX archives, VXL/SHP source files, "
         "executables, or WAV files.\n"
         "These generated data assets are distributed by the project maintainer under separate\n"
@@ -94,14 +120,16 @@ def _package_notice() -> str:
     )
 
 
-def _package_readme(package_name: str, version: str, snapshot_id: str) -> str:
+def _package_readme(package_name: str, version: str, snapshot_id: str, profile: str) -> str:
     return (
         f"# {package_name}\n\n"
         "Machine-generated startup data for the RA2 Explorer static web edition. "
         "Applications should pin the exact package version rather than use a moving tag.\n\n"
         f"- Version: `{version}`\n"
         f"- Snapshot: `{snapshot_id}`\n"
-        "- Included: manifest, bilingual unit/sound catalogs, and unit card-preview atlases\n"
+        f"- Data group: `{profile}`\n"
+        "- Included: manifest, bilingual unit/sound catalogs, unit details, generated metadata, "
+        "card-preview atlases, and rendered animation frames\n"
         "- Excluded: original game archives and source assets\n"
     )
 
@@ -112,9 +140,12 @@ def prepare_package(
     *,
     package_name: str,
     version: str,
+    profile: str = "all",
     overwrite: bool = False,
 ) -> dict[str, Any]:
     _validate_identity(package_name, version)
+    if profile not in CDN_PROFILES:
+        raise PagesCdnPublishError(f"未知的 CDN 资料分组：{profile}")
     try:
         verification = verify_snapshot(archive)
     except SnapshotValidationError as error:
@@ -138,7 +169,7 @@ def prepare_package(
             if info.is_dir():
                 continue
             relative = _safe_member_path(info.filename)
-            if not _is_cdn_member(relative):
+            if not _is_cdn_member(relative, profile):
                 continue
             content = bundle.read(info)
             destination = data_root.joinpath(*PurePosixPath(relative).parts)
@@ -147,7 +178,11 @@ def prepare_package(
             selected.append((relative, content))
 
     selected_paths = {path for path, _ in selected}
-    missing = sorted({"manifest.json", *REQUIRED_CATALOGS} - selected_paths)
+    missing = (
+        sorted({"manifest.json", *REQUIRED_CATALOGS} - selected_paths)
+        if profile in {"all", "core"}
+        else []
+    )
     card_atlases = [
         path for path in selected_paths if path.startswith("previews/entity-atlases/")
     ]
@@ -156,7 +191,7 @@ def prepare_package(
         for path in selected_paths
         if path.startswith("previews/entity-search-atlases/")
     ]
-    if missing or not card_atlases or not search_atlases:
+    if profile in {"all", "core"} and (missing or not card_atlases or not search_atlases):
         detail = ", ".join(missing) if missing else (
             "单位卡片图集" if not card_atlases else "搜索单位缩略图图集"
         )
@@ -165,7 +200,7 @@ def prepare_package(
     package_manifest = {
         "name": package_name,
         "version": version,
-        "description": "Pinned startup indexes and card previews for RA2 Explorer Pages",
+        "description": f"Pinned {profile} data for RA2 Explorer Pages",
         "license": "SEE LICENSE IN NOTICE.txt",
         "repository": {
             "type": "git",
@@ -181,7 +216,7 @@ def prepare_package(
         encoding="utf-8",
     )
     (resolved_staging / "README.md").write_text(
-        _package_readme(package_name, version, str(verification["snapshot_id"])),
+        _package_readme(package_name, version, str(verification["snapshot_id"]), profile),
         encoding="utf-8",
     )
     (resolved_staging / "NOTICE.txt").write_text(_package_notice(), encoding="utf-8")
@@ -193,15 +228,18 @@ def prepare_package(
         "registry": DEFAULT_REGISTRY,
         "base_url": f"{CDN_ROOT}/{package_name}@{version}/data",
         "snapshot_id": verification["snapshot_id"],
+        "profile": profile,
+        "routes": ["manifest.json", *CDN_PROFILE_PREFIXES["core"]]
+        if profile == "core"
+        else list(CDN_PROFILE_PREFIXES.get(profile, ())),
         "files": len(selected),
         "bytes": sum(len(content) for _, content in selected),
         "sha256": _content_digest(selected),
-        "included": [
-            "manifest",
-            "bilingual_catalogs",
-            "entity_card_atlases",
-            "entity_search_atlases",
-        ],
+        "included": (
+            [item for values in CDN_PROFILE_INCLUDED.values() for item in values]
+            if profile == "all"
+            else CDN_PROFILE_INCLUDED[profile]
+        ),
         "contains_original_game_files": False,
     }
 
@@ -274,6 +312,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("archive", type=Path, help="通过审计的 Pages ZIP")
     parser.add_argument("--version", required=True, help="不可变 npm 版本，例如 0.11.0")
     parser.add_argument("--package-name", default=DEFAULT_PACKAGE)
+    parser.add_argument("--profile", choices=CDN_PROFILES, default="all")
     parser.add_argument(
         "--staging",
         type=Path,
@@ -294,6 +333,7 @@ def main() -> int:
             args.staging,
             package_name=args.package_name,
             version=args.version,
+            profile=args.profile,
             overwrite=args.overwrite,
         )
         package_report = validate_package(args.staging.resolve())

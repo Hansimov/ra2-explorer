@@ -9,7 +9,17 @@ import pytest
 from scripts.verify_pages_snapshot import SnapshotValidationError, verify_snapshot
 
 
-def _write_snapshot(root: Path, *, schema_version: int = 1) -> None:
+def _write_snapshot(
+    root: Path,
+    *,
+    schema_version: int = 1,
+    entity_media: list[dict[str, object]] | None = None,
+) -> None:
+    entity = json.dumps(
+        {"media": entity_media or []},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
     files = {
         "ASSET-NOTICE.txt": b"derived files only",
         "assets/a.json": b"{}",
@@ -18,8 +28,8 @@ def _write_snapshot(root: Path, *, schema_version: int = 1) -> None:
         "catalog/entities.zh-TW.json": b"{}",
         "catalog/media.zh-CN.json": b"{}",
         "catalog/media.zh-TW.json": b"{}",
-        "entities/zh-CN/a.json": b"{}",
-        "entities/zh-TW/a.json": b"{}",
+        "entities/zh-CN/a.json": entity,
+        "entities/zh-TW/a.json": entity,
     }
     categories: dict[str, dict[str, int]] = {}
     for name, content in files.items():
@@ -114,3 +124,46 @@ def test_verify_pages_snapshot_rejects_nonexistent_slim_format(tmp_path: Path) -
 
     with pytest.raises(SnapshotValidationError, match="不存在或不支持"):
         verify_snapshot(snapshot)
+
+
+def test_verify_pages_snapshot_rejects_missing_unit_voice_translation(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    _write_snapshot(
+        snapshot,
+        entity_media=[
+            {
+                "kind": "voice",
+                "samples": [
+                    {
+                        "name": "sample",
+                        "original_text": "Ready",
+                        "translated_text": None,
+                    }
+                ],
+            }
+        ],
+    )
+
+    with pytest.raises(SnapshotValidationError, match="存在原文但缺少译文"):
+        verify_snapshot(snapshot)
+
+
+def test_verify_pages_snapshot_accepts_complete_unit_voice_translation(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    _write_snapshot(
+        snapshot,
+        entity_media=[
+            {
+                "kind": "voice",
+                "samples": [
+                    {
+                        "name": "sample",
+                        "original_text": "Ready",
+                        "translated_text": "准备就绪",
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert verify_snapshot(snapshot)["snapshot_id"] == "test-snapshot"

@@ -221,6 +221,38 @@ def _validate_manifest(
             )
 
 
+def _validate_unit_voice_translations(entries: dict[str, SnapshotEntry]) -> None:
+    missing: set[str] = set()
+    for path, entry in entries.items():
+        if not path.startswith("entities/zh-CN/") or not path.endswith(".json"):
+            continue
+        try:
+            entity = json.loads(entry.read())
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise SnapshotValidationError(f"单位资料格式无效：{path}") from error
+        if not isinstance(entity, dict):
+            raise SnapshotValidationError(f"单位资料顶层必须是对象：{path}")
+        for association in entity.get("media", []):
+            if not isinstance(association, dict) or association.get("kind") != "voice":
+                continue
+            for sample in association.get("samples", []):
+                if not isinstance(sample, dict):
+                    continue
+                original = sample.get("original_text")
+                translation = sample.get("translated_text")
+                if (
+                    isinstance(original, str)
+                    and original.strip()
+                    and not (isinstance(translation, str) and translation.strip())
+                ):
+                    missing.add(str(sample.get("name") or "unknown"))
+    if missing:
+        examples = ", ".join(sorted(missing, key=str.casefold)[:10])
+        raise SnapshotValidationError(
+            f"单位语音存在原文但缺少译文：{len(missing)} 项（{examples}）"
+        )
+
+
 def _scan_private_content(entries: Iterable[SnapshotEntry]) -> None:
     findings = []
     for entry in entries:
@@ -251,6 +283,7 @@ def verify_snapshot(path: Path, *, expected_sha256: str | None = None) -> dict[s
     by_path = _validate_file_set(entries)
     manifest = _load_manifest(by_path)
     _validate_manifest(manifest, entries)
+    _validate_unit_voice_translations(by_path)
     _scan_private_content(entries)
     return {
         "snapshot_id": manifest["snapshot_id"],

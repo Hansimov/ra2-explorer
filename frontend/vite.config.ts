@@ -23,6 +23,52 @@ function pagesCdnBase(mode: string, override: string | undefined) {
   }
 }
 
+interface PagesCdnRoute {
+  prefix: string;
+  base_url: string;
+}
+
+function pagesCdnRoutes(mode: string, override: string | undefined) {
+  if (override?.trim() || mode !== "pages") return [];
+  try {
+    const lockUrl = new URL("../packaging/pages-cdn.json", import.meta.url);
+    const lock = JSON.parse(readFileSync(lockUrl, "utf8")) as { routes?: unknown };
+    if (!Array.isArray(lock.routes)) return [];
+    return lock.routes.flatMap((route): PagesCdnRoute[] => {
+      if (!route || typeof route !== "object") return [];
+      const candidate = route as { prefix?: unknown; base_url?: unknown };
+      if (typeof candidate.prefix !== "string" || typeof candidate.base_url !== "string") return [];
+      const prefix = candidate.prefix.trim().replace(/^\/+/, "");
+      const baseUrl = candidate.base_url.trim().replace(/\/+$/, "");
+      return prefix && baseUrl ? [{ prefix, base_url: baseUrl }] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function routedCdnUrl(path: string, base: string, routes: PagesCdnRoute[]) {
+  const route = routes.find((item) => path === item.prefix || path.startsWith(item.prefix));
+  const selectedBase = route?.base_url || base;
+  return selectedBase ? `${selectedBase}/${path}` : "";
+}
+
+function pagesDataVersion(mode: string, override: string | undefined) {
+  if (override?.trim()) return override.trim();
+  if (mode !== "pages") return "";
+  try {
+    const lockUrl = new URL("../packaging/pages-data.json", import.meta.url);
+    const lock = JSON.parse(readFileSync(lockUrl, "utf8")) as {
+      tag?: unknown;
+      snapshot_id?: unknown;
+    };
+    if (typeof lock.tag === "string" && lock.tag.trim()) return lock.tag.trim();
+    return typeof lock.snapshot_id === "string" ? lock.snapshot_id.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // Vite's loadEnv() only reads env files. Preserve the documented precedence
   // of variables supplied by the caller/CI over values from .env files.
@@ -41,20 +87,25 @@ export default defineConfig(({ mode }) => {
   const normalizedBase = publicBase.endsWith("/") ? publicBase : `${publicBase}/`;
   const defaultAtlas = env.RA2EXP_DEFAULT_ATLAS?.replace(/^\/+/, "");
   const staticCdnBase = pagesCdnBase(mode, env.RA2EXP_STATIC_CDN_BASE);
+  const staticCdnRoutes = pagesCdnRoutes(mode, env.RA2EXP_STATIC_CDN_BASE);
+  const staticDataVersion = pagesDataVersion(mode, env.VITE_RA2EXP_STATIC_DATA_VERSION);
+  const browserStateVersion = env.VITE_RA2EXP_BROWSER_STATE_VERSION
+    || [buildCommit || buildTag || "development", staticDataVersion].filter(Boolean).join(":");
   const preloadPagesAssets = {
     name: "preload-pages-startup-assets",
     transformIndexHtml() {
       if (mode !== "pages" || !defaultAtlas) return [];
-      const snapshotBase = staticCdnBase || `${normalizedBase}data`;
+      const snapshotUrl = (path: string) => routedCdnUrl(path, staticCdnBase, staticCdnRoutes)
+        || `${normalizedBase}data/${path}`;
       const links: HtmlTagDescriptor[] = [
         {
           tag: "link",
-          attrs: { rel: "preload", as: "fetch", crossorigin: "anonymous", href: `${snapshotBase}/manifest.json` },
+          attrs: { rel: "preload", as: "fetch", crossorigin: "anonymous", href: snapshotUrl("manifest.json") },
           injectTo: "head-prepend" as const,
         },
         {
           tag: "link",
-          attrs: { rel: "preload", as: "fetch", crossorigin: "anonymous", href: `${snapshotBase}/catalog/entities.zh-CN.json` },
+          attrs: { rel: "preload", as: "fetch", crossorigin: "anonymous", href: snapshotUrl("catalog/entities.zh-CN.json") },
           injectTo: "head-prepend" as const,
         },
         {
@@ -63,14 +114,15 @@ export default defineConfig(({ mode }) => {
             rel: "preload",
             as: "image",
             type: "image/webp",
-            href: `${snapshotBase}/${defaultAtlas}`,
+            href: snapshotUrl(defaultAtlas),
           },
           injectTo: "head-prepend" as const,
         },
       ];
-      if (staticCdnBase) links.unshift({
+      const cdnOrigin = staticCdnBase || staticCdnRoutes[0]?.base_url;
+      if (cdnOrigin) links.unshift({
         tag: "link",
-        attrs: { rel: "preconnect", href: new URL(staticCdnBase).origin },
+        attrs: { rel: "preconnect", href: new URL(cdnOrigin).origin },
         injectTo: "head-prepend" as const,
       });
       return links;
@@ -88,6 +140,9 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_RA2EXP_STABLE_BEHIND": JSON.stringify(env.VITE_RA2EXP_STABLE_BEHIND || stableBehind),
       "import.meta.env.VITE_RA2EXP_REPOSITORY_URL": JSON.stringify(repositoryUrl),
       "import.meta.env.VITE_RA2EXP_STATIC_CDN_BASE": JSON.stringify(staticCdnBase),
+      "import.meta.env.VITE_RA2EXP_STATIC_CDN_ROUTES": JSON.stringify(JSON.stringify(staticCdnRoutes)),
+      "import.meta.env.VITE_RA2EXP_STATIC_DATA_VERSION": JSON.stringify(staticDataVersion),
+      "import.meta.env.VITE_RA2EXP_BROWSER_STATE_VERSION": JSON.stringify(browserStateVersion),
     },
     build: {
       outDir: mode === "pages" ? "dist-pages" : "dist",

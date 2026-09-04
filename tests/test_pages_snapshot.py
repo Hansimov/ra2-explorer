@@ -13,6 +13,7 @@ from ra2_explorer.pages_snapshot import (
     PAGES_ASSET_BUNDLE_REVISION,
     PAGES_RENDER_REVISION,
     _animation_frame_requests,
+    _animation_tasks,
     _AnimationVariant,
     _asset_usages,
     _AssetUsage,
@@ -27,6 +28,7 @@ from ra2_explorer.pages_snapshot import (
     _export_entity_previews,
     _export_entity_search_thumbnail_atlases,
     _export_entity_thumbnail_atlases,
+    _export_shp_animation_previews,
     _pages_audio_stats,
     _prune_reused_exports,
     _safe_filename,
@@ -117,6 +119,7 @@ def test_pages_asset_usages_exclude_incomplete_combat_effects() -> None:
     entities = [
         {
             "kind": "infantry",
+            "sides": ["GDI"],
             "components": [],
             "media": [
                 {
@@ -135,6 +138,7 @@ def test_pages_asset_usages_exclude_incomplete_combat_effects() -> None:
         },
         {
             "kind": "building",
+            "sides": ["ThirdSide"],
             "components": [],
             "media": [
                 {
@@ -151,6 +155,98 @@ def test_pages_asset_usages_exclude_incomplete_combat_effects() -> None:
 
     assert set(referenced) == {"body", "active"}
     assert set(usages) == {"body", "active"}
+    assert usages["body"].player_colors == frozenset({"blue"})
+    assert usages["active"].player_colors == frozenset({"purple"})
+
+
+def test_pages_animation_exports_are_partitioned_by_player_color(tmp_path: Path) -> None:
+    usage = _AssetUsage(
+        asset={"id": "demo", "format": "pcx"},
+        variants=frozenset(
+            {
+                _AnimationVariant(
+                    palette="unit",
+                    start_frame=0,
+                    frame_count=1,
+                    facing_step=0,
+                    frame_step=1,
+                    shadow=False,
+                )
+            }
+        ),
+        player_colors=frozenset({"blue", "red"}),
+    )
+
+    images, models = _animation_tasks(tmp_path, {"demo": usage}, {"demo": {"frame_count": 1}})
+
+    assert models == []
+    assert {task.params["player_color"] for task in images} == {"blue", "red"}
+    assert {task.output.relative_to(tmp_path).as_posix() for task in images} == {
+        "previews/assets/demo/color-blue/unit/0-shadow-none.webp",
+        "previews/assets/demo/color-red/unit/0-shadow-none.webp",
+    }
+
+
+def test_pages_shp_animation_frames_apply_each_entity_player_color(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rendered_colors: list[str] = []
+
+    class Palette:
+        def __init__(self, color: str = "original"):
+            self.color = color
+
+        def with_player_color(self, color: str) -> Palette:
+            return Palette(color)
+
+    class Sprite:
+        frames = (object(),)
+
+        @staticmethod
+        def render(
+            _frame: int,
+            palette: Palette,
+            *,
+            scale: int,
+            shadow_frame: int | None,
+        ) -> Image.Image:
+            assert scale == 5
+            assert shadow_frame is None
+            rendered_colors.append(palette.color)
+            return Image.new("RGBA", (1, 1), (255, 255, 255, 255))
+
+    services = SimpleNamespace(
+        reader=SimpleNamespace(read=lambda _asset_id: ({"id": "demo"}, b"sprite"))
+    )
+    usage = _AssetUsage(
+        asset={"id": "demo", "format": "shp"},
+        variants=frozenset(
+            {_AnimationVariant("unit", 0, 1, 0, 1, False)}
+        ),
+        player_colors=frozenset({"blue", "red"}),
+    )
+    monkeypatch.setattr("ra2_explorer.pages_snapshot.parse_shp", lambda _data: Sprite())
+    monkeypatch.setattr(
+        "ra2_explorer.pages_snapshot._select_palette",
+        lambda *_args, **_kwargs: Palette(),
+    )
+
+    _export_shp_animation_previews(
+        services,  # type: ignore[arg-type]
+        tmp_path,
+        {"demo": usage},
+        {"demo": {"frame_count": 1, "frames": []}},
+        workers=1,
+    )
+
+    assert rendered_colors == ["blue", "red"]
+    assert (
+        tmp_path / "previews/assets/demo/color-blue/unit/0-shadow-none.webp"
+    ).is_file()
+    assert (
+        tmp_path / "previews/assets/demo/color-red/unit/0-shadow-none.webp"
+    ).is_file()
 
 
 def test_animation_frame_requests_exports_only_configured_direction_ranges() -> None:

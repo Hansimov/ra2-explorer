@@ -40,8 +40,8 @@ from ra2_explorer.config import Settings
 from ra2_explorer.errors import Ra2ExplorerError
 
 PAGES_SNAPSHOT_SCHEMA_VERSION = 2
-PAGES_RENDER_REVISION = 9
-PAGES_ASSET_BUNDLE_REVISION = 5
+PAGES_RENDER_REVISION = 10
+PAGES_ASSET_BUNDLE_REVISION = 6
 _SAFE_FILENAME = re.compile(r"^[A-Za-z0-9_.~$-]+$")
 _AUDIO_FORMATS = {"aud", "bag_audio", "wav"}
 _MODEL_FORMATS = {"hva", "vxl"}
@@ -70,6 +70,7 @@ class _AnimationVariant:
 class _AssetUsage:
     asset: dict[str, Any]
     variants: frozenset[_AnimationVariant]
+    player_colors: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +318,7 @@ def _asset_usages(
         asset = item["asset"]
         referenced[str(asset["id"])] = asset
     for entity in entities:
+        entity_player_color = _entity_player_color(entity) or ""
         for component in entity.get("components", []):
             asset = component.get("asset")
             if asset:
@@ -343,8 +345,9 @@ def _asset_usages(
                     continue
                 current = animation.setdefault(
                     asset_id,
-                    {"asset": asset, "variants": set()},
+                    {"asset": asset, "variants": set(), "player_colors": set()},
                 )
+                current["player_colors"].add(entity_player_color)
                 playback = sample.get("animation") or {}
                 current["variants"].add(
                     _AnimationVariant(
@@ -365,6 +368,7 @@ def _asset_usages(
         asset_id: _AssetUsage(
             asset=value["asset"],
             variants=frozenset(value["variants"]),
+            player_colors=frozenset(value["player_colors"]),
         )
         for asset_id, value in animation.items()
     }
@@ -1023,45 +1027,61 @@ def _animation_tasks(
         asset_format = str(usage.asset.get("format") or "")
         frame_count = max(1, int(metadata.get(asset_id, {}).get("frame_count") or 1))
         requested = _animation_frame_requests(usage, frame_count)
+        player_colors = usage.player_colors or frozenset({""})
         if asset_format in _MODEL_FORMATS:
             model_frames = {frame for _palette, frame, _shadow in requested}
-            for frame in sorted(model_frames or {0}):
-                output = root / "models" / "assets" / _safe_filename(asset_id) / f"{frame}.json"
-                models[output] = _ExportTask(
-                    path=f"/api/assets/{quote(asset_id, safe='')}/model.json",
-                    params={"frame": frame},
-                    output=output,
-                    kind="model",
-                )
+            for player_color in sorted(player_colors):
+                for frame in sorted(model_frames or {0}):
+                    output = (
+                        root
+                        / "models"
+                        / "assets"
+                        / _safe_filename(asset_id)
+                        / f"color-{player_color or 'original'}"
+                        / f"{frame}.json"
+                    )
+                    params: dict[str, object] = {"frame": frame}
+                    if player_color:
+                        params["player_color"] = player_color
+                    models[output] = _ExportTask(
+                        path=f"/api/assets/{quote(asset_id, safe='')}/model.json",
+                        params=params,
+                        output=output,
+                        kind="model",
+                    )
             continue
         if asset_format not in _IMAGE_FORMATS:
             continue
         if asset_format == "shp":
             continue
-        for palette, frame, shadow_frame in sorted(
-            requested or {("auto", 0, None)},
-            key=lambda item: (item[0], item[1], item[2] if item[2] is not None else -1),
-        ):
-            palette_kind = None if palette == "auto" else palette
-            output = (
-                root
-                / "previews"
-                / "assets"
-                / _safe_filename(asset_id)
-                / palette
-                / f"{frame}-shadow-{shadow_frame if shadow_frame is not None else 'none'}.webp"
-            )
-            params: dict[str, object] = {"frame": frame, "scale": 5}
-            if shadow_frame is not None:
-                params["shadow_frame"] = shadow_frame
-            if palette_kind:
-                params["palette_kind"] = palette_kind
-            images[output] = _ExportTask(
-                path=f"/api/assets/{quote(asset_id, safe='')}/preview.png",
-                params=params,
-                output=output,
-                kind="image",
-            )
+        for player_color in sorted(player_colors):
+            for palette, frame, shadow_frame in sorted(
+                requested or {("auto", 0, None)},
+                key=lambda item: (item[0], item[1], item[2] if item[2] is not None else -1),
+            ):
+                palette_kind = None if palette == "auto" else palette
+                output = (
+                    root
+                    / "previews"
+                    / "assets"
+                    / _safe_filename(asset_id)
+                    / f"color-{player_color or 'original'}"
+                    / palette
+                    / f"{frame}-shadow-{shadow_frame if shadow_frame is not None else 'none'}.webp"
+                )
+                params: dict[str, object] = {"frame": frame, "scale": 5}
+                if shadow_frame is not None:
+                    params["shadow_frame"] = shadow_frame
+                if palette_kind:
+                    params["palette_kind"] = palette_kind
+                if player_color:
+                    params["player_color"] = player_color
+                images[output] = _ExportTask(
+                    path=f"/api/assets/{quote(asset_id, safe='')}/preview.png",
+                    params=params,
+                    output=output,
+                    kind="image",
+                )
     return list(images.values()), list(models.values())
 
 
@@ -1117,38 +1137,43 @@ def _export_shp_animation_previews(
         asset, data = services.reader.read(asset_id)
         sprite = parse_shp(data)
         frame_count = max(1, int(metadata.get(asset_id, {}).get("frame_count") or 1))
-        palettes: dict[str, object] = {}
+        palettes: dict[tuple[str, str], object] = {}
         paired_shadows = {
             int(frame["index"]): int(frame["paired_shadow_frame"])
             for frame in metadata.get(asset_id, {}).get("frames", [])
             if frame.get("paired_shadow_frame") is not None
         }
-        for palette, frame, shadow_frame in sorted(
-            _animation_frame_requests(usage, frame_count, paired_shadows),
-            key=lambda item: (item[0], item[1], item[2] if item[2] is not None else -1),
-        ):
-            output = (
-                root
-                / "previews"
-                / "assets"
-                / _safe_filename(asset_id)
-                / palette
-                / f"{frame}-shadow-{shadow_frame if shadow_frame is not None else 'none'}.webp"
-            )
-            if output.is_file() and output.stat().st_size > 0:
-                continue
-            selected_palette = palettes.get(palette)
-            if selected_palette is None:
-                palette_kind = None if palette == "auto" else palette
-                selected_palette = _select_palette(services, asset, None, palette_kind)
-                palettes[palette] = selected_palette
-            image = sprite.render(
-                frame,
-                selected_palette,
-                scale=5,
-                shadow_frame=shadow_frame,
-            )
-            _save_webp(image, output)
+        for player_color in sorted(usage.player_colors or frozenset({""})):
+            for palette, frame, shadow_frame in sorted(
+                _animation_frame_requests(usage, frame_count, paired_shadows),
+                key=lambda item: (item[0], item[1], item[2] if item[2] is not None else -1),
+            ):
+                output = (
+                    root
+                    / "previews"
+                    / "assets"
+                    / _safe_filename(asset_id)
+                    / f"color-{player_color or 'original'}"
+                    / palette
+                    / f"{frame}-shadow-{shadow_frame if shadow_frame is not None else 'none'}.webp"
+                )
+                if output.is_file() and output.stat().st_size > 0:
+                    continue
+                palette_key = (palette, player_color)
+                selected_palette = palettes.get(palette_key)
+                if selected_palette is None:
+                    palette_kind = None if palette == "auto" else palette
+                    selected_palette = _select_palette(services, asset, None, palette_kind)
+                    if player_color:
+                        selected_palette = selected_palette.with_player_color(player_color)
+                    palettes[palette_key] = selected_palette
+                image = sprite.render(
+                    frame,
+                    selected_palette,
+                    scale=5,
+                    shadow_frame=shadow_frame,
+                )
+                _save_webp(image, output)
 
     _run_parallel("生成单位动画", selected, export, workers=workers)
 

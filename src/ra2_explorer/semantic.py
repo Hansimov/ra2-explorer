@@ -958,6 +958,11 @@ class SemanticLibrary:
         )
         if event_type:
             items = [item for item in items if event_type in item["slots"]]  # type: ignore[operator]
+        country_counts = Counter(
+            str(country)
+            for item in items
+            for country in item["countries"]  # type: ignore[union-attr]
+        )
         if sort == "description_asc":
             items.sort(
                 key=lambda item: (
@@ -988,6 +993,15 @@ class SemanticLibrary:
             "event_types": [
                 {"event_type": slot, "count": count}
                 for slot, count in sorted(event_type_counts.items())
+            ],
+            "countries": [
+                {
+                    **country,
+                    "display_name": localize_game_text(country["display_name"], language),
+                    "count": country_counts.get(country["id"], 0),
+                }
+                for country in catalog.countries
+                if country_counts.get(country["id"], 0)
             ],
         }
 
