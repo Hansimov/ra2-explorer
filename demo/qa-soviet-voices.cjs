@@ -135,7 +135,8 @@ for (const segment of showcase.segments || []) {
         sequences: [...sectionSequences],
         runs: [...runIds],
       });
-      if (sectionCues[0]?.slot !== "die" && sectionCues.length > plannedCount) {
+      if (!["die", "crashing", "impact_land"].includes(sectionCues[0]?.slot)
+        && sectionCues.length > plannedCount) {
         check(`${segment.id}/${group.id}/${sectionKey}: 相邻语音保留稳定动作`, sectionCues.some((cue, index) => (
           index > 0 && cue.animationRunId === sectionCues[index - 1].animationRunId
         )), sectionCues.map((cue) => cue.animationRunId));
@@ -267,10 +268,11 @@ for (const segment of showcase.segments || []) {
   check(`${segment.id}: 原始画面为 30 fps`, video?.r_frame_rate === "30/1", video?.r_frame_rate);
   check(`${segment.id}: 帧时钟与媒体时长一致`, Math.abs(duration - Number(segment.capture?.duration || 0)) < 0.08, { media: duration, frameClock: segment.capture?.duration });
 }
-const expectedGroups = showcase.smoke
+const partialRecording = showcase.smoke || (showcase.unitFilter || []).length > 0;
+const expectedGroups = partialRecording
   ? showcase.segments.reduce((total, segment) => total + Number(segment.groups?.length || 0), 0)
   : showcase.planSummary.sharedVoiceGroups;
-const expectedCues = showcase.smoke
+const expectedCues = partialRecording
   ? showcase.segments.reduce((total, segment) => total + Number(segment.expectedCueCount || 0), 0)
   : showcase.planSummary.presentations;
 check(`覆盖 ${expectedGroups} 个${PROFILE.sideLabel}步兵组`, groupCount === expectedGroups, groupCount);
