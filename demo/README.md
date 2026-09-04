@@ -49,8 +49,8 @@ X:\IndexTTS2\.venv\Scripts\python.exe generate_showcase_narration.py ^
 ## 合成与验收
 
 ```bat
-node render-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS v0.14.0
-node qa-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS showcase-YYYY-MM-DDTHH-MM-SS\final\RA2-Explorer-Complete-Showcase-v0.14.0.mp4
+node render-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS v0.15.0
+node qa-showcase.cjs showcase-YYYY-MM-DDTHH-MM-SS showcase-YYYY-MM-DDTHH-MM-SS\final\RA2-Explorer-Complete-Showcase-v0.15.0.mp4
 ```
 
 合成器按配置统一收紧演示节奏，输出 H.264 2560×1440、30 fps 和 AAC 48 kHz 双声道，并写入七个章节标记。QA 会检查七章齐全、页面与网络错误、源分辨率、CABLE 路由与延迟、旁白重叠、游戏声音数量、演示节奏、最终编码、章节和总时长，并生成被忽略的 `qa-report.json`。
@@ -103,10 +103,12 @@ npm run allied-voices:record -- http://127.0.0.1:46120/ infantry --smoke
 录制完成后，命令会输出运行目录。使用该目录名完成合成与验收：
 
 ```bat
-npm run voices:render -- soviet-voices-YYYY-MM-DDTHH-MM-SS v0.14.0
+npm run voices:render -- soviet-voices-YYYY-MM-DDTHH-MM-SS v0.15.0
 npm run voices:qa -- soviet-voices-YYYY-MM-DDTHH-MM-SS
-npm run allied-voices:render -- allied-voices-YYYY-MM-DDTHH-MM-SS v0.14.0
+npm run allied-voices:render -- allied-voices-YYYY-MM-DDTHH-MM-SS v0.15.0
 npm run allied-voices:qa -- allied-voices-YYYY-MM-DDTHH-MM-SS
 ```
 
-合成器输出带逐单位章节的步兵版视频，编码为 H.264 1080×1920、30 fps 和 AAC 48 kHz 双声道。录制逐条等待原始声音自然结束，相邻声音约保留 0.50 秒间隔，单位切换使用完整的淡出、横向滑动和淡入过场；不设置目标总时长，也不通过倍速或裁剪压缩内容。验收覆盖声音清单完整性、动作语义、动作段连续性、阵亡交替、姿态过渡、渲染帧变化、事件文字固定位置、主体与字幕图层、首帧片头、声音间隔、最后一条声音边界、页面与网络错误、CABLE 路由和时延、源分辨率、帧时钟、中英文文本、最终编码及章节数量。
+合成器输出带逐单位章节的步兵版视频，编码为 H.264 1080×1920、30 fps 和 AAC 48 kHz 双声道。最终 MP4、清单和 QA 报告统一放入 `.runtime\RA2MD-Ext\demo-video\exports`；运行目录只保留录制与合成中间文件，避免成品散落在脚本目录。可以用 `RA2EXP_DEMO_EXPORT_DIR` 覆盖导出位置。
+
+录制逐条等待原始声音自然结束，相邻声音约保留 0.50 秒间隔，单位切换使用完整的淡出、横向滑动和淡入过场；不设置目标总时长，也不通过倍速或裁剪压缩内容。验收覆盖声音清单完整性、动作语义、动作段连续性、阵亡交替、姿态过渡、渲染帧变化、事件文字固定位置、主体与字幕图层、首帧片头、声音间隔、最后一条声音边界、页面与网络错误、CABLE 路由和时延、源分辨率、帧时钟、中英文文本、最终编码及章节数量。

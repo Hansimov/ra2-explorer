@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { companionPath, demoExportDirectory } = require("./demo-output-paths.cjs");
 const {
   SLOT_ORDER,
   animationMatchesIntent,
@@ -308,6 +309,12 @@ const report = {
   checks,
   failures,
 };
-fs.writeFileSync(path.join(RUN_DIR, "qa-report.json"), JSON.stringify(report, null, 2), "utf8");
+const serializedReport = JSON.stringify(report, null, 2);
+fs.writeFileSync(path.join(RUN_DIR, "qa-report.json"), serializedReport, "utf8");
+const exportedVideo = showcase.exportedVideo
+  ? path.resolve(showcase.exportedVideo)
+  : path.join(demoExportDirectory(ROOT), path.basename(FINAL_VIDEO));
+fs.mkdirSync(path.dirname(exportedVideo), { recursive: true });
+fs.writeFileSync(companionPath(exportedVideo, "qa"), serializedReport, "utf8");
 console.log(JSON.stringify({ status: report.status, checks: checks.length, failures, metrics: report.metrics }, null, 2));
 if (failures.length) process.exitCode = 1;

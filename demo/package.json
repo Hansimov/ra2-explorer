@@ -1,7 +1,7 @@
 {
   "name": "ra2-explorer-demo-video",
   "private": true,
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "RA2 Explorer reusable showcase recording and QA pipeline",
   "scripts": {
     "audio:inspect": "node inspect-audio-devices.cjs",

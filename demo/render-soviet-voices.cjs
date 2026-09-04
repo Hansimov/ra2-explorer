@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { companionPath, demoExportDirectory } = require("./demo-output-paths.cjs");
 const { profileKeyFromArguments, voiceVideoProfile } = require("./voice-video-profiles.cjs");
 
 const ROOT = path.resolve(__dirname);
@@ -17,8 +18,9 @@ const manifest = JSON.parse(fs.readFileSync(path.join(RUN_DIR, "recording-manife
 const PROFILE = voiceVideoProfile(manifest.profile || requestedProfile.key);
 const CLIP_DIR = path.join(RUN_DIR, "clips");
 const FINAL_DIR = path.join(RUN_DIR, "final");
+const EXPORT_DIR = demoExportDirectory(ROOT);
 const SECTION_NAMES = { infantry: PROFILE.outputName };
-for (const directory of [CLIP_DIR, FINAL_DIR]) fs.mkdirSync(directory, { recursive: true });
+for (const directory of [CLIP_DIR, FINAL_DIR, EXPORT_DIR]) fs.mkdirSync(directory, { recursive: true });
 
 function run(executable, args) {
   const result = spawnSync(executable, args, {
@@ -72,12 +74,9 @@ for (const segment of manifest.segments) {
     "-movflags", "+faststart", "-shortest", target,
   ]);
   const renderedDuration = durationOf(target);
-  const latestTarget = path.join(ROOT, path.basename(target));
-  fs.copyFileSync(target, latestTarget);
   renderedSegments.push({
     ...segment,
     clip: relative(target),
-    latestClip: latestTarget,
     duration: renderedDuration,
     chapterOffset,
     audioDelayMilliseconds: delay,
@@ -121,8 +120,8 @@ run("ffmpeg.exe", [
   "-i", noChapters, "-i", chapterPath,
   "-map", "0", "-map_metadata", "1", "-c", "copy", "-movflags", "+faststart", finalPath,
 ]);
-const latestFinal = path.join(ROOT, path.basename(finalPath));
-fs.copyFileSync(finalPath, latestFinal);
+const exportedFinal = path.join(EXPORT_DIR, path.basename(finalPath));
+fs.copyFileSync(finalPath, exportedFinal);
 const output = {
   ...manifest,
   renderedAt: new Date().toISOString(),
@@ -133,15 +132,17 @@ const output = {
   duration: durationOf(finalPath),
   size: fs.statSync(finalPath).size,
   finalVideo: relative(finalPath),
-  latestVideo: latestFinal,
+  exportedVideo: exportedFinal,
   segments: renderedSegments,
 };
-fs.writeFileSync(path.join(RUN_DIR, `${PROFILE.filePrefix}-manifest.json`), JSON.stringify(output, null, 2), "utf8");
+const serializedOutput = JSON.stringify(output, null, 2);
+fs.writeFileSync(path.join(RUN_DIR, `${PROFILE.filePrefix}-manifest.json`), serializedOutput, "utf8");
 fs.writeFileSync(path.join(ROOT, `latest-${PROFILE.filePrefix}.json`), JSON.stringify(output, null, 2), "utf8");
+fs.writeFileSync(companionPath(exportedFinal, "manifest"), serializedOutput, "utf8");
 console.log(JSON.stringify({
   finalVideo: finalPath,
-  latestVideo: latestFinal,
+  exportedVideo: exportedFinal,
   duration: output.duration,
   bytes: output.size,
-  clips: renderedSegments.map((segment) => segment.latestClip),
+  clips: renderedSegments.map((segment) => path.join(RUN_DIR, segment.clip)),
 }, null, 2));
