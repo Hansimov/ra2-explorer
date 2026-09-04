@@ -208,7 +208,7 @@ for (const segment of showcase.segments || []) {
       expected: "受击",
       actual: cue.eventLabel,
     });
-    check(`${segment.id}/${cue.assetId}: 阵亡动作仅用于阵亡声音`, cue.slot === "die"
+    check(`${segment.id}/${cue.assetId}: 阵亡动作仅用于阵亡链路声音`, ["die", "crashing", "impact_land"].includes(cue.slot)
       || !/die|death|airdeath|tumble/i.test(cue.animationEvent), {
       slot: cue.slot,
       animationEvent: cue.animationEvent,
@@ -227,6 +227,27 @@ for (const segment of showcase.segments || []) {
         Number(cue.start) - Number(previous.start) - Number(previous.duration),
       );
     }
+  }
+  const rocketeerCues = (segment.audioCues || []).filter((cue) => cue.unitId === "JUMPJET");
+  if (rocketeerCues.length) {
+    const crashing = rocketeerCues.filter((cue) => cue.eventName === "RocketeerDie");
+    const impacts = rocketeerCues.filter((cue) => cue.eventName === "RocketeerCrash");
+    check(`${segment.id}/JUMPJET: 游戏原生空中阵亡声音完整`, crashing.length === 1 && impacts.length === 2, {
+      crashing: crashing.map((cue) => cue.assetName),
+      impacts: impacts.map((cue) => cue.assetName),
+    });
+    check(`${segment.id}/JUMPJET: 坠落声音匹配空中坠落起始动作`, crashing.every((cue) => (
+      cue.slot === "crashing"
+      && cue.animationEvent === "airdeathstart+airdeathfalling"
+      && !(cue.animationTransitionEvents || []).length
+    )), crashing.map((cue) => ({
+      slot: cue.slot,
+      animationEvent: cue.animationEvent,
+      transitions: cue.animationTransitionEvents,
+    })));
+    check(`${segment.id}/JUMPJET: 撞地声音匹配空中阵亡收尾动作`, impacts.every((cue) => (
+      cue.slot === "impact_land" && cue.animationEvent === "airdeathfinish"
+    )), impacts.map((cue) => ({ slot: cue.slot, animationEvent: cue.animationEvent })));
   }
   const expectedSeparation = Number(CONFIG.audio.cueLeadSeconds) + Number(CONFIG.audio.cueGapSeconds);
   check(`${segment.id}: 相邻声音留有舒适间隔`, !Number.isFinite(minimumCueSeparation)

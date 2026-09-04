@@ -125,7 +125,8 @@ function sequenceKey(sequence) {
 function loopableSequence(sequence, slot) {
   const event = String(sequence.event || "").toLowerCase();
   if (["down", "up"].includes(event)) return false;
-  if (slot !== "die" && Number(sequence.frame_count || 0) < 3) return false;
+  if (!["die", "crashing", "impact_land"].includes(slot)
+    && Number(sequence.frame_count || 0) < 3) return false;
   return Number(sequence.frame_count || 0) >= 2;
 }
 
@@ -158,6 +159,8 @@ function sequencePreferences(slot, unitId, eventName) {
     weapon: amphibiousAttack,
     special_attack: [["deploy"], ["deployedfire"], ["fireup", "firefly"]],
     feedback: PROFILE.flyingUnits.includes(unitId) ? [["panic"]] : [["panic"], ["crawl"]],
+    crashing: [["airdeathstart"], ["tumble"]],
+    impact_land: [["airdeathfinish"]],
     die: [["die1"], ["die2"], ["death"], ["tumble"]],
   };
   return preferences[slot] || preferences.select;
@@ -257,7 +260,23 @@ function sequenceDescriptor(visual, sequence, slot, intent) {
     intervalMs: Number(sequence.rate_ms) > 0 ? Number(sequence.rate_ms) : CONFIG.visual.frameIntervalMs,
     posture: animationPosture(event),
     sequenceId: sequenceKey(sequence),
-    playbackMode: slot === "die" || /^deploy$/i.test(String(event)) ? "once-hold" : "loop",
+    playbackMode: ["die", "crashing", "impact_land"].includes(slot)
+      || /^deploy$/i.test(String(event)) ? "once-hold" : "loop",
+  };
+}
+
+function compositeSequenceDescriptor(visual, names, event) {
+  const sequences = names.map((name) => (visual.sequences || []).find((sequence) => (
+    validSequence(visual, sequence) && String(sequence.event || "").toLowerCase() === name
+  )));
+  if (sequences.some((sequence) => !sequence)) return null;
+  return {
+    event,
+    frames: sequences.flatMap((sequence) => sequenceFrames(visual, sequence)),
+    intervalMs: CONFIG.visual.frameIntervalMs,
+    posture: "low",
+    sequenceId: sequences.map(sequenceKey).join("+"),
+    playbackMode: "once-hold",
   };
 }
 
@@ -283,21 +302,15 @@ function animationCandidates(group, section, sourceId) {
     cue.eventName,
     cue.animationIntent,
   ).map((sequence) => sequenceDescriptor(visual, sequence, slot, cue.animationIntent));
-  if (slot === "die" && PROFILE.flyingUnits.includes(group.representative.id)) {
-    const airDeath = ["airdeathstart", "airdeathfinish"]
-      .map((name) => (visual.sequences || []).find((sequence) => (
-        validSequence(visual, sequence) && String(sequence.event || "").toLowerCase() === name
-      )))
-      .filter(Boolean);
-    if (airDeath.length === 2) {
-      candidates.push({
-        event: "airdeathstart+airdeathfinish",
-        frames: airDeath.flatMap((sequence) => sequenceFrames(visual, sequence)),
-        intervalMs: CONFIG.visual.frameIntervalMs,
-        posture: "low",
-        sequenceId: airDeath.map(sequenceKey).join("+"),
-        playbackMode: "once-hold",
-      });
+  if (PROFILE.flyingUnits.includes(group.representative.id)) {
+    const compositeNames = slot === "crashing"
+      ? ["airdeathstart", "airdeathfalling"]
+      : slot === "die"
+        ? ["airdeathstart", "airdeathfalling", "airdeathfinish"]
+        : null;
+    if (compositeNames) {
+      const composite = compositeSequenceDescriptor(visual, compositeNames, compositeNames.join("+"));
+      if (composite) candidates.push(composite);
     }
   }
   return candidates;

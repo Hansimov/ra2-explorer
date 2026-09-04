@@ -19,6 +19,7 @@ const VOCAL_SLOTS = new Set([
   "select", "create", "move", "attack", "feedback", "special_attack",
   "enter", "capture", "deploy", "harvest", "die",
 ]);
+const FLYING_DEATH_SOUND_SLOTS = new Set(["crashing", "impact_land"]);
 const WEAPON_SOUND_SLOTS = /^(?:elite_)?(?:primary|secondary|weapon_\d+)$/i;
 const USAGE_ORDER = new Map([
   ["buildable", 0],
@@ -87,7 +88,7 @@ function bodySequences(entity) {
       palette: sample.palette || "unit",
       ...sample.animation,
     })))
-    .filter((sequence) => sequence.assetId && Number(sequence.frame_count || 0) > 1);
+    .filter((sequence) => sequence.assetId && Number(sequence.frame_count || 0) > 0);
 }
 
 function visualInfo(entity) {
@@ -108,13 +109,21 @@ function voiceCues(entity) {
   const cues = new Map();
   for (const association of entity.media || []) {
     const weaponSound = association.kind === "sound" && WEAPON_SOUND_SLOTS.test(association.slot);
-    if (association.kind !== "voice" && !VOCAL_SLOTS.has(association.slot) && !weaponSound) continue;
+    const flyingDeathSound = association.kind === "sound"
+      && PROFILE.flyingUnits.includes(entity.id)
+      && FLYING_DEATH_SOUND_SLOTS.has(association.slot);
+    if (association.kind !== "voice"
+      && !VOCAL_SLOTS.has(association.slot)
+      && !weaponSound
+      && !flyingDeathSound) continue;
     for (const sample of association.samples || []) {
       if (!sample.asset) continue;
       const specializedSoundSlot = /spyattack/i.test(association.event)
         ? "disguise"
         : /defusekit/i.test(association.event) ? "defuse" : "";
-      const semanticSlot = weaponSound ? specializedSoundSlot || "weapon" : compactText(association.slot);
+      const semanticSlot = weaponSound
+        ? specializedSoundSlot || "weapon"
+        : compactText(association.slot);
       const description = soundDescription(association.event, semanticSlot);
       const sourceOriginal = displayText(sample.original_text);
       const original = (

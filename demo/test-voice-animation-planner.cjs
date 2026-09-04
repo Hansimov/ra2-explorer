@@ -48,6 +48,13 @@ assert.deepEqual(deaths.map((cue) => cue.animation.sequenceId), ["die1", "die2",
 assert.ok(deaths.every((cue, index) => index === 0 || cue.animation.runId !== deaths[index - 1].animation.runId));
 assert.ok(deaths.every((cue) => cue.animation.transitionEvents.length === 0));
 
+const crashing = planAnimationSections(cues("crashing", 1), {
+  unitId: "JUMPJET",
+  getCandidates: () => [candidate("airdeathstart+airdeathfalling", "low", "once-hold")],
+  getTransition: () => ({ event: "down", frames: ["down-1", "down-2"], intervalMs: 90 }),
+});
+assert.deepEqual(crashing[0].animation.transitionEvents, []);
+
 const continuous = planAnimationSections([
   ...cues("attack", 2),
   ...cues("weapon", 2).map((cue) => ({ ...cue, eventName: "same" })),
@@ -69,6 +76,8 @@ assert.equal(chooseCueEvent(semanticCue("DefuseKit"), "ENGINEER").slot, "defuse"
 assert.equal(eventLabel({ slot: "disguise" }), "伪装");
 assert.equal(eventLabel({ slot: "infiltrate" }), "渗透");
 assert.equal(eventLabel({ slot: "defuse" }), "拆弹");
+assert.equal(eventLabel({ slot: "crashing" }), "坠落");
+assert.equal(eventLabel({ slot: "impact_land" }), "撞地");
 assert.ok(animationMatchesSlot("disguise", "walk"));
 assert.ok(animationMatchesSlot("infiltrate", "enter"));
 assert.ok(animationMatchesSlot("defuse", "deploy"));
@@ -79,6 +88,14 @@ assert.deepEqual(soundDescription("ChronoLegionAttack", "weapon"), {
 assert.deepEqual(soundDescription("GuardianGIDeployedAttack", "weapon"), {
   original: "<Rocket launcher fire>",
   translated: "<火箭筒开火声>",
+});
+assert.deepEqual(soundDescription("RocketeerDie", "crashing"), {
+  original: "<Crashing sound>",
+  translated: "<坠落声>",
+});
+assert.deepEqual(soundDescription("RocketeerCrash", "impact_land"), {
+  original: "<Ground impact>",
+  translated: "<撞地声>",
 });
 
 const intentFor = (assetName, slot, eventName, original, options = {}) => animationIntentForCue({
@@ -105,7 +122,9 @@ assert.equal(intentFor("ichrfea.wav", "feedback", "ChronoLegionFear", "Cover me!
 assert.equal(intentFor("irocfea.wav", "feedback", "RocketeerFear", "I'm losing compression!", { flying: true }).key, "fly");
 assert.equal(intentFor("irocsea.wav", "select", "RocketeerSelect", "Rockets in the sky.", { flying: true }).key, "fly");
 assert.equal(intentFor("isniatta.wav", "attack", "SniperAttackCommand", "Give me a target").key, "fireprone");
-assert.equal(intentFor("ilasdia.wav", "die", "LunarDie", "<Death cry>", { flying: true }).key, "airdeathstart+airdeathfinish");
+assert.equal(intentFor("irocdiea.wav", "crashing", "RocketeerDie", "<Crashing sound>", { flying: true }).key, "airdeathstart+airdeathfalling");
+assert.equal(intentFor("iroccraa.wav", "impact_land", "RocketeerCrash", "<Ground impact>", { flying: true }).key, "airdeathfinish");
+assert.equal(intentFor("ilasdia.wav", "die", "LunarDie", "<Death cry>", { flying: true }).key, "airdeathstart+airdeathfalling+airdeathfinish");
 assert.ok(animationMatchesIntent({ sequenceNames: ["deployedfire"] }, "deployedfire"));
 assert.ok(!animationMatchesIntent({ sequenceNames: ["deployedfire"] }, "fireup"));
 assert.ok(animationMatchesSlot("capture", "idle2"));
@@ -113,6 +132,8 @@ assert.ok(animationMatchesSlot("feedback", "fly"));
 assert.ok(animationMatchesSlot("select", "fly"));
 assert.ok(animationMatchesSlot("move", "cheer"));
 assert.ok(animationMatchesSlot("attack", "cheer"));
+assert.ok(animationMatchesSlot("crashing", "airdeathstart+airdeathfalling"));
+assert.ok(animationMatchesSlot("impact_land", "airdeathfinish"));
 
 const fineSections = planAnimationSections([
   { assetId: "move-run", slot: "move", eventName: "Move", animationIntent: { key: "walk" } },

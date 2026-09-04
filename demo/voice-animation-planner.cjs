@@ -54,23 +54,23 @@ function planAnimationSections(cues, options) {
     let candidates = uniqueCandidates(getCandidates(section));
     if (!candidates.length) throw new Error(`${unitId}/${section.key} 没有可用的主体动作`);
     candidates = rotateToPrevious(candidates, previous);
-    const deathSection = section.slot === "die";
-    const animationCount = deathSection
+    const terminalSection = ["die", "crashing", "impact_land"].includes(section.slot);
+    const animationCount = terminalSection
       ? Math.min(candidates.length, section.cues.length)
       : plannedAnimationCount(section.cues.length, candidates.length, minimumRunLength);
     const selected = candidates.slice(0, animationCount);
 
     for (const [cueIndex, cue] of section.cues.entries()) {
-      const candidateIndex = deathSection
+      const candidateIndex = terminalSection
         ? cueIndex % selected.length
         : Math.min(selected.length - 1, Math.floor(cueIndex * selected.length / section.cues.length));
       const candidate = selected[candidateIndex];
-      const canContinueRun = !deathSection
+      const canContinueRun = !terminalSection
         && previous?.playbackMode === "loop"
         && candidate.playbackMode === "loop"
         && previous.sequenceId === candidate.sequenceId;
       if (!canContinueRun) runSerial += 1;
-      const transition = !canContinueRun && !deathSection && previous?.slot !== "die"
+      const transition = !canContinueRun && !terminalSection && previous?.slot !== "die"
         ? getTransition(previous?.posture || "normal", candidate.posture || "normal")
         : null;
       const introFrames = transition?.frames || [];

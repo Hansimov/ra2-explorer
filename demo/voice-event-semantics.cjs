@@ -13,6 +13,8 @@ const SLOT_ORDER = new Map([
   ["special_attack", 8],
   ["feedback", 9],
   ["harvest", 10],
+  ["crashing", 97],
+  ["impact_land", 98],
   ["die", 99],
 ]);
 
@@ -31,6 +33,8 @@ const SLOT_LABELS = {
   special_attack: "特殊攻击",
   feedback: "受击",
   harvest: "采集",
+  crashing: "坠落",
+  impact_land: "撞地",
   die: "阵亡",
 };
 
@@ -106,7 +110,13 @@ function animationIntentForCue(cue, options = {}) {
     || CUE_ANIMATION_OVERRIDES.get(stem);
   if (exact) return animationIntent(exact);
 
-  if (slot === "die" && options.flying) return animationIntent(["airdeathstart+airdeathfinish"]);
+  if (slot === "crashing" && options.flying) {
+    return animationIntent(["airdeathstart+airdeathfalling"]);
+  }
+  if (slot === "impact_land" && options.flying) return animationIntent(["airdeathfinish"]);
+  if (slot === "die" && options.flying) {
+    return animationIntent(["airdeathstart+airdeathfalling+airdeathfinish"]);
+  }
   if (slot === "die") return animationIntent(["die1", "die2", "death", "tumble"]);
   if (slot === "create") return animationIntent(["cheer"]);
   if (slot === "select") {
@@ -209,6 +219,12 @@ function soundDescription(eventName, slot) {
   if (slot === "weapon") {
     return { original: "<Weapon sound>", translated: "<武器声>" };
   }
+  if (slot === "crashing") {
+    return { original: "<Crashing sound>", translated: "<坠落声>" };
+  }
+  if (slot === "impact_land") {
+    return { original: "<Ground impact>", translated: "<撞地声>" };
+  }
   if (slot === "die") return { original: "<Death cry>", translated: "<阵亡声>" };
   return { original: "", translated: "" };
 }
@@ -262,6 +278,8 @@ function animationMatchesSlot(slot, animationEvent) {
     weapon: /fire|attack|shoot|deploy/i,
     special_attack: /deploy|fire|attack|shoot/i,
     feedback: /crawl|panic|hit|fear|fly|hover/i,
+    crashing: /airdeathstart\+airdeathfalling|tumble/i,
+    impact_land: /airdeathfinish/i,
     die: /die|death|tumble/i,
   };
   return (patterns[slot] || /preview|idle/i).test(String(animationEvent || ""));
